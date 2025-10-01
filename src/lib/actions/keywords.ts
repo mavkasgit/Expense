@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
 import { keywordSchema, updateKeywordSchema, assignKeywordToCategorySchema } from '@/lib/validations/keywords'
+import { keywordSynonymSchema } from '@/lib/validations/synonyms'
 import { extractKeywords } from '@/lib/utils/keywords'
 import type {
   CreateKeywordData,
@@ -502,6 +503,215 @@ async function recategorizeExpensesByKeyword(keyword: string, categoryId: string
   } catch (error) {
     console.error('Ошибка перекатегоризации:', error)
     return { error: 'Не удалось перекатегоризировать траты' }
+  }
+}
+
+// Обновление неопознанного ключевого слова
+export async function updateUnrecognizedKeyword(id: string, newKeyword: string) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    const trimmedKeyword = newKeyword.trim()
+    if (!trimmedKeyword) {
+      return { error: 'Ключевое слово не может быть пустым' }
+    }
+
+    // Проверяем, не существует ли уже такое ключевое слово
+    const { data: existing } = await supabase
+      .from('unrecognized_keywords')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('keyword', trimmedKeyword)
+      .neq('id', id)
+      .single()
+
+    if (existing) {
+      return { error: 'Такое ключевое слово уже существует' }
+    }
+
+    const { data: keyword, error } = await supabase
+      .from('unrecognized_keywords')
+      .update({ 
+        keyword: trimmedKeyword,
+        last_seen: new Date().toISOString()
+      })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Ошибка обновления неопознанного ключевого слова:', error)
+      return { error: 'Не удалось обновить ключевое слово' }
+    }
+
+    return { success: true, data: keyword }
+  } catch (err) {
+    console.error('Ошибка обновления неопознанного ключевого слова:', err)
+    return { error: 'Произошла ошибка при обновлении' }
+  }
+}
+
+// Создание нового ключевого слова с синонимом из неопознанного
+export async function createKeywordWithSynonym(data: {
+  newKeyword: string
+  synonym: string
+  category_id: string
+}) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    // Проверяем категорию
+    const { data: category, error: categoryError } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('id', data.category_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (categoryError || !category) {
+      return { error: 'Категория не найдена' }
+    }
+
+    // Создаем основное ключевое слово
+    const { data: keyword, error: keywordError } = await supabase
+      .from('category_keywords')
+      .insert({
+        user_id: user.id,
+        keyword: data.newKeyword.trim(),
+        category_id: data.category_id
+      })
+      .select()
+      .single()
+
+    if (keywordError) {
+      if (keywordError.code === '23505') {
+        return { error: 'Такое ключевое слово уже существует' }
+      }
+      console.error('Ошибка создания ключевого слова:', keywordError)
+      return { error: 'Не удалось создать ключевое слово' }
+    }
+
+    // Добавляем синоним
+    const { data: synonymData, error: synonymError } = await supabase
+      .from('keyword_synonyms')
+      .insert({
+        keyword_id: keyword.id,
+        synonym: data.synonym.trim(),
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (synonymError) {
+      // Если синоним не удалось создать, удаляем ключевое слово
+      await supabase
+        .from('category_keywords')
+        .delete()
+        .eq('id', keyword.id)
+      
+      if (synonymError.code === '23505') {
+        return { error: 'Такой синоним уже существует' }
+      }
+      console.error('Ошибка создания синонима:', synonymError)
+      return { error: 'Не удалось создать синоним' }
+    }
+
+    // Удаляем из неопознанных
+    await supabase
+      .from('unrecognized_keywords')
+      .delete()
+      .eq('keyword', data.synonym.trim())
+      .eq('user_id', user.id)
+
+    // Перекатегоризируем расходы
+    await recategorizeExpensesByKeyword(data.synonym.trim(), data.category_id)
+
+    revalidatePath('/categories')
+    revalidatePath('/expenses')
+    
+    return { success: true, data: { keyword, synonym: synonymData } }
+  } catch (err) {
+    console.error('Ошибка создания ключевого слова с синонимом:', err)
+    return { error: 'Произошла ошибка при создании' }
+  }
+}
+
+// Добавление синонима к существующему ключевому слову
+export async function addSynonymToKeyword(data: {
+  keyword_id: string
+  synonym: string
+}) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    const validatedData = keywordSynonymSchema.parse(data)
+
+    // Проверяем, что ключевое слово принадлежит пользователю
+    const { data: keyword, error: keywordError } = await supabase
+      .from('category_keywords')
+      .select('id, category_id')
+      .eq('id', validatedData.keyword_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (keywordError || !keyword) {
+      return { error: 'Ключевое слово не найдено' }
+    }
+
+    // Добавляем синоним
+    const { data: synonymData, error: synonymError } = await supabase
+      .from('keyword_synonyms')
+      .insert({
+        keyword_id: validatedData.keyword_id,
+        synonym: validatedData.synonym.trim(),
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (synonymError) {
+      if (synonymError.code === '23505') {
+        return { error: 'Такой синоним уже существует' }
+      }
+      console.error('Ошибка создания синонима:', synonymError)
+      return { error: 'Не удалось создать синоним' }
+    }
+
+    // Удаляем из неопознанных
+    await supabase
+      .from('unrecognized_keywords')
+      .delete()
+      .eq('keyword', validatedData.synonym.trim())
+      .eq('user_id', user.id)
+
+    // Перекатегоризируем расходы
+    if (keyword.category_id) {
+      await recategorizeExpensesByKeyword(validatedData.synonym.trim(), keyword.category_id)
+    }
+
+    revalidatePath('/categories')
+    revalidatePath('/expenses')
+    
+    return { success: true, data: synonymData }
+  } catch (err) {
+    console.error('Ошибка добавления синонима:', err)
+    return { error: 'Произошла ошибка при добавлении синонима' }
   }
 }
 
