@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getCitySynonyms } from '@/lib/actions/synonyms'
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
-import { parseCityCoordinates, normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
+import { hasGeoPoint, isVirtualCoordinates, parseCityCoordinates, normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
 import type { CitySynonymOptionRecord, CitySynonymWithCity } from '@/types'
 
 export function useCitySynonyms() {
@@ -30,7 +30,7 @@ export function useCitySynonyms() {
               cityName,
               synonym: record.synonym,
               markerPreset: parsedCoordinates ? normaliseMarkerPreset(parsedCoordinates.markerPreset) : null,
-              hasCoordinates: Boolean(parsedCoordinates),
+              hasCoordinates: Boolean(parsedCoordinates && hasGeoPoint(parsedCoordinates) && !isVirtualCoordinates(parsedCoordinates)),
               isFavorite: Boolean(record.city?.is_favorite)
             } satisfies CitySynonymOptionRecord
           })

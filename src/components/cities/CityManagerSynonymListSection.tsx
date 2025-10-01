@@ -4,7 +4,7 @@ import { Button, Input } from '@/components/ui';
 import { MarkerPresetPicker } from '@/components/cities/MarkerPresetPicker';
 import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon';
 import { DEFAULT_MARKER_PRESET, markerPresetLookup } from '@/lib/constants/cityMarkers';
-import { normaliseMarkerPreset } from '@/lib/utils/cityCoordinates';
+import { hasGeoPoint, isVirtualCoordinates } from '@/lib/utils/cityCoordinates';
 import type { CityCoordinates } from '@/lib/utils/cityCoordinates';
 import { AddSynonymForm } from '@/components/settings/AddSynonymForm';
 import type { CityGroup, CitySynonymRecord } from './cityManagerTypes';
@@ -86,8 +86,13 @@ export function CityManagerSynonymListSection({
           const synonymsForCity = group.entries.filter(
             entry => entry.synonym.trim().toLowerCase() !== canonicalName.trim().toLowerCase()
           );
-          const hasCoordinates = Boolean(group.coordinates);
-          const coordinatesHint = hasCoordinates ? 'Город отображается на карте' : 'Координаты не определены';
+              const hasCoordinates = group.coordinates ? hasGeoPoint(group.coordinates) : false;
+              const isVirtual = isVirtualCoordinates(group.coordinates);
+              const coordinatesHint = isVirtual
+                ? 'Виртуальный город, не отображается на карте'
+                : hasCoordinates
+                  ? 'Город отображается на карте'
+                  : 'Координаты не определены';
           const isMarkerUpdating = Boolean(markerUpdatingMap[group.cityId]);
           const isFavoriteUpdating = favoriteUpdatingCityId === group.cityId;
           const nextFavoriteState = !group.isFavorite;
@@ -97,7 +102,7 @@ export function CityManagerSynonymListSection({
               <div className="flex flex-col gap-2 px-4 py-3 text-left">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    {hasCoordinates ? (
+                    {hasCoordinates || isVirtual ? (
                       <MarkerPresetPicker
                         value={group.coordinates?.markerPreset ?? DEFAULT_MARKER_PRESET}
                         onChange={(value) => onMarkerPresetChange(group.cityId, value)}

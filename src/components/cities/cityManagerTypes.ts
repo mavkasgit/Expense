@@ -17,4 +17,4 @@ export type CityGroup = {
   isFavorite: boolean;
 };
 
-export type CityGroupWithCoordinates = CityGroup & { coordinates: CityCoordinates };
+export type CityGroupWithCoordinates = CityGroup & { coordinates: CityCoordinates & { lat: number; lon: number } };

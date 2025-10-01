@@ -6,6 +6,7 @@ import { feature } from 'topojson-client'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
 import type { GeometryCollection as TopologyGeometryCollection, Topology } from 'topojson-specification'
 import countries110m from 'world-atlas/countries-110m.json'
+import { hasGeoPoint, isVirtualCoordinates, normaliseMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates'
 
 const WIDTH = 760
 const HEIGHT = 420
@@ -17,7 +18,7 @@ interface CityMapProps {
     name: string;
     total: number;
     alternate: number;
-    coordinates: { lat: number; lon: number; markerPreset?: string | null } | null;
+    coordinates: CityCoordinates | null;
   }[];
 }
 
@@ -99,9 +100,8 @@ const MARKER_COLORS: Record<string, string> = {
   'islands#darkOrangeIcon': '#EA580C',
   'islands#violetIcon': '#7C3AED',
   'islands#blackIcon': '#1F2937',
+  'virtual#ghostIcon': '#64748B',
 }
-
-const normalisePreset = (preset?: string | null) => preset ?? 'islands#blueIcon'
 
 const CityMapComponent = ({ cities }: CityMapProps) => {
   const projection = useMemo(() => {
@@ -131,17 +131,27 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
     const fallbackColumnSpacing = 140
     const fallbackRowSpacing = 44
 
-    return cities.map(city => {
+    return cities
+      .map<Marker | null>(city => {
       const key = normaliseName(city.name)
-      const coordinate = city.coordinates ?? coordinateLookup.get(key) ?? null
+        const coordinateSource = city.coordinates
+        const isVirtual = isVirtualCoordinates(coordinateSource)
+
+        if (isVirtual) {
+          return null
+        }
+
+        const coordinate = coordinateSource && hasGeoPoint(coordinateSource)
+          ? { lon: coordinateSource.lon!, lat: coordinateSource.lat! }
+          : coordinateLookup.get(key) ?? null
       let position: [number, number] | null = null
       let hasCoordinates = false
 
-      if (coordinate) {
+        if (coordinate) {
         const projected = projection([coordinate.lon, coordinate.lat])
         if (projected) {
           position = projected as [number, number]
-          hasCoordinates = city.coordinates != null || coordinateLookup.has(key)
+            hasCoordinates = Boolean((coordinateSource && hasGeoPoint(coordinateSource)) || coordinateLookup.has(key))
         }
       }
 
@@ -157,7 +167,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
 
       const radius = Math.min(6 + city.alternate * 2, 14)
 
-      const preset = normalisePreset(city.coordinates?.markerPreset)
+        const preset = normaliseMarkerPreset(city.coordinates?.markerPreset)
       const color = MARKER_COLORS[preset] ?? DEFAULT_MARKER_COLOR
 
       return {
@@ -171,7 +181,8 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
         hasCoordinates,
         color,
       }
-    })
+      })
+      .filter((marker): marker is Marker => marker !== null)
   }, [cities, projection])
 
   return (

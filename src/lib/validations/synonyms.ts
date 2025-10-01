@@ -17,7 +17,9 @@ export const citySynonymSchema = z.object({
     .min(2, 'Название города должно содержать минимум 2 символа')
     .max(100, 'Название города слишком длинное')
     .optional(),
-  synonym: z.string().min(2, 'Синоним должен содержать минимум 2 символа').max(100, 'Синоним слишком длинный')
+  synonym: z.string().min(2, 'Синоним должен содержать минимум 2 символа').max(100, 'Синоним слишком длинный'),
+  markerPreset: z.string().min(1).optional().nullable(),
+  isVirtual: z.boolean().optional()
 }).refine((data) => data.cityId || data.city, {
   message: 'Укажите город или идентификатор города',
   path: ['city']

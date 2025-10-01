@@ -102,3 +102,32 @@ input[type="date"]::-webkit-clear-button {
   transform: translateY(-20px);
   transition: opacity 300ms, transform 300ms;
 }
+
+/* Глобальное отключение автокомплита браузера */
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Скрываем выпадающие списки автокомплита */
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+  height: 0;
+  width: 0;
+  margin: 0;
+}
+
+/* Дополнительная защита от автокомплита */
+input[autocomplete="off"]::-webkit-contacts-auto-fill-button,
+input[autocomplete="off"]::-webkit-credentials-auto-fill-button {
+  display: none !important;
+}

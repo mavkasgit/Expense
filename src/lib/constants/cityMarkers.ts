@@ -2,9 +2,11 @@ export type MarkerPresetConfig = {
   value: string
   label: string
   color: string
+  isVirtual?: boolean
 }
 
 export const DEFAULT_MARKER_PRESET = 'islands#blueIcon'
+export const VIRTUAL_CITY_MARKER_PRESET = 'virtual#ghostIcon'
 
 export const MARKER_PRESETS: MarkerPresetConfig[] = [
   { value: 'islands#blueIcon', label: 'Синий маркер', color: '#2563EB' },
@@ -15,7 +17,7 @@ export const MARKER_PRESETS: MarkerPresetConfig[] = [
   { value: 'islands#blackIcon', label: 'Графитовый маркер', color: '#1F2937' },
   { value: 'islands#yellowIcon', label: 'Жёлтый маркер', color: '#CA8A04' },
   { value: 'islands#darkGreenIcon', label: 'Хвойный маркер', color: '#047857' },
-  { value: 'islands#pinkIcon', label: 'Розовый маркер', color: '#DB2777' }
+  { value: VIRTUAL_CITY_MARKER_PRESET, label: 'Виртуальный город', color: '#64748B', isVirtual: true }
 ]
 
 export const markerPresetLookup = new Map(MARKER_PRESETS.map((preset) => [preset.value, preset] as const))

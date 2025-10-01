@@ -1,4 +1,9 @@
-import { normaliseMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates';
+import {
+  hasGeoPoint,
+  isVirtualCoordinates,
+  normaliseMarkerPreset,
+  type CityCoordinates
+} from '@/lib/utils/cityCoordinates';
 
 export type MapState = {
   center: [number, number];
@@ -20,6 +25,16 @@ export const coordinatesAreEqual = (a: CityCoordinates | null, b: CityCoordinate
     return true;
   }
   if (!a || !b) {
+    return false;
+  }
+  if (isVirtualCoordinates(a) || isVirtualCoordinates(b)) {
+    return (
+      isVirtualCoordinates(a) &&
+      isVirtualCoordinates(b) &&
+      normaliseMarkerPreset(a.markerPreset) === normaliseMarkerPreset(b.markerPreset)
+    );
+  }
+  if (!hasGeoPoint(a) || !hasGeoPoint(b)) {
     return false;
   }
   const sameLat = Math.abs(a.lat - b.lat) < 1e-6;

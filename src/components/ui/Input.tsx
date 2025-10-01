@@ -72,7 +72,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               className
             )}
             ref={ref}
-            autoComplete="new-password"
+            autoComplete={props.autoComplete || "off"}
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
+            data-form-type="other"
             {...props}
           />
           

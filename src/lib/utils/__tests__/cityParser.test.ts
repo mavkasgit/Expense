@@ -1,4 +1,6 @@
 import { extractCityFromDescription, batchExtractCities, getCityStats, syncCitySynonyms } from '../cityParser'
+import { parseCityCoordinates } from '../cityCoordinates'
+import { VIRTUAL_CITY_MARKER_PRESET } from '@/lib/constants/cityMarkers'
 
 describe('cityParser', () => {
   describe('extractCityFromDescription', () => {
@@ -93,6 +95,31 @@ describe('cityParser', () => {
       const stats = getCityStats(descriptions)
       expect(stats['Minsk']).toBe(2)
       expect(stats['Logoysk']).toBe(2)
+    })
+  })
+
+  describe('parseCityCoordinates', () => {
+    test('returns numeric coordinates when lat/lon provided', () => {
+      const result = parseCityCoordinates({ lat: 51.5, lon: 39.2, markerPreset: 'islands#redIcon' })
+      expect(result).not.toBeNull()
+      expect(result?.lat).toBeCloseTo(51.5)
+      expect(result?.lon).toBeCloseTo(39.2)
+      expect(result?.markerPreset).toBe('islands#redIcon')
+      expect(result?.isVirtual).toBeFalsy()
+    })
+
+    test('returns virtual coordinates when marker preset is virtual', () => {
+      const result = parseCityCoordinates({ markerPreset: VIRTUAL_CITY_MARKER_PRESET, lat: null, lon: null })
+      expect(result).not.toBeNull()
+      expect(result?.isVirtual).toBe(true)
+      expect(result?.lat).toBeNull()
+      expect(result?.lon).toBeNull()
+      expect(result?.markerPreset).toBe(VIRTUAL_CITY_MARKER_PRESET)
+    })
+
+    test('returns null when coordinates missing without virtual marker', () => {
+      const result = parseCityCoordinates({ markerPreset: 'islands#blueIcon' })
+      expect(result).toBeNull()
     })
   })
 })

@@ -5,7 +5,7 @@ import { Button, Input } from '@/components/ui';
 import { MarkerPresetPicker } from '@/components/cities/MarkerPresetPicker';
 import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps';
 import { DEFAULT_MARKER_PRESET } from '@/lib/constants/cityMarkers';
-import type { CityCoordinates } from '@/lib/utils/cityCoordinates';
+import { hasGeoPoint, isVirtualCoordinates, isVirtualMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates';
 import { extractEventCoordinates, extractPlacemarkCoordinates, type MapState } from './cityManagerUtils';
 
 interface CityManagerCreateCitySectionProps {
@@ -57,6 +57,10 @@ export function CityManagerCreateCitySection({
     ? 'Добавить город вместе с его альтернативным названием'
     : 'Добавить город';
 
+  const hasSelectedPoint = selectedCoordinates ? hasGeoPoint(selectedCoordinates) : false;
+  const isVirtualSelection =
+    isVirtualCoordinates(selectedCoordinates) || isVirtualMarkerPreset(selectedMarkerPreset);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-2">
@@ -72,7 +76,6 @@ export function CityManagerCreateCitySection({
               onChange={(event) => onCityChange(event.target.value)}
               disabled={isSubmitting}
               className="h-11 pl-12"
-              autoComplete="new-password"
               ref={newCityInputRef}
             />
             <MarkerPresetPicker
@@ -90,7 +93,7 @@ export function CityManagerCreateCitySection({
             variant="outline"
             onClick={onFindOnMap}
             isLoading={isSearchingCoordinates}
-            disabled={!newCity.trim() || isSubmitting}
+            disabled={!newCity.trim() || isSubmitting || isVirtualSelection}
             className="h-11"
           >
             Найти на карте
@@ -98,7 +101,11 @@ export function CityManagerCreateCitySection({
           <Button
             type="submit"
             isLoading={isSubmitting}
-            disabled={isSubmitting || !selectedCoordinates}
+            disabled={
+              isSubmitting ||
+              !selectedCoordinates ||
+              (!isVirtualSelection && !hasSelectedPoint)
+            }
             className="h-11 text-center leading-snug"
           >
             {submitLabel}
@@ -125,11 +132,14 @@ export function CityManagerCreateCitySection({
                     if (!coords) {
                       return;
                     }
+                    if (isVirtualSelection) {
+                      return;
+                    }
                     const [lat, lon] = coords;
                     onSelectCoordinates(lat, lon);
                   }}
                 >
-                  {selectedCoordinates && (
+                  {selectedCoordinates && hasSelectedPoint && (
                     <Placemark
                       geometry={[selectedCoordinates.lat, selectedCoordinates.lon]}
                       options={{ draggable: true, preset: selectedCoordinates.markerPreset ?? DEFAULT_MARKER_PRESET }}
@@ -168,6 +178,7 @@ export function CityManagerCreateCitySection({
                 onBlur={onManualBlur}
                 inputMode="decimal"
                 placeholder="Например: 59.9386"
+                disabled={isSubmitting || isVirtualSelection}
               />
             </div>
             <div className="space-y-1.5">
@@ -181,15 +192,22 @@ export function CityManagerCreateCitySection({
                 onBlur={onManualBlur}
                 inputMode="decimal"
                 placeholder="Например: 30.3141"
-                autoComplete="new-password"
+                disabled={isSubmitting || isVirtualSelection}
               />
             </div>
           </div>
-          <Button type="button" variant="secondary" onClick={onManualApply} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onManualApply}
+            disabled={isSubmitting || isVirtualSelection}
+          >
             Применить координаты
           </Button>
           <p className="text-xs text-slate-500">
-            Введите координаты вручную, если карта недоступна или требуется точное значение.
+            {isVirtualSelection
+              ? 'Виртуальный город не требует координат и не отображается на карте.'
+              : 'Введите координаты вручную, если карта недоступна или требуется точное значение.'}
           </p>
         </div>
       </div>

@@ -18,7 +18,16 @@ import { attachUnrecognizedCity, getUnrecognizedCities, resolveUnrecognizedCity 
 import { syncCitySynonyms } from '@/lib/utils/cityParser';
 import type { CitySynonymWithCity, UnrecognizedCity } from '@/types';
 import { DEFAULT_MARKER_PRESET, MARKER_PRESETS, markerPresetLookup } from '@/lib/constants/cityMarkers';
-import { parseCityCoordinates, parseManualCoordinatePair, normaliseMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates';
+import {
+  createVirtualCityCoordinates,
+  hasGeoPoint,
+  isVirtualCoordinates,
+  isVirtualMarkerPreset,
+  normaliseMarkerPreset,
+  parseCityCoordinates,
+  parseManualCoordinatePair,
+  type CityCoordinates
+} from '@/lib/utils/cityCoordinates';
 import {
   DEFAULT_ZOOM,
   MapState,
@@ -40,25 +49,28 @@ interface CityManagerProps {
 }
 
 const pickRandomMarkerPreset = (exclude?: string) => {
-  if (MARKER_PRESETS.length === 0) {
+  const selectablePresets = MARKER_PRESETS.filter(preset => !preset.isVirtual);
+  const source = selectablePresets.length > 0 ? selectablePresets : MARKER_PRESETS;
+
+  if (source.length === 0) {
     return DEFAULT_MARKER_PRESET;
   }
 
-  const [firstPreset] = MARKER_PRESETS;
+  const [firstPreset] = source;
 
   if (!firstPreset) {
     return DEFAULT_MARKER_PRESET;
   }
 
-  if (MARKER_PRESETS.length === 1) {
+  if (source.length === 1) {
     return firstPreset.value;
   }
 
   let candidate: string | undefined = exclude;
 
   while (!candidate || candidate === exclude) {
-    const randomIndex = Math.floor(Math.random() * MARKER_PRESETS.length);
-    candidate = MARKER_PRESETS[randomIndex]?.value ?? firstPreset.value;
+    const randomIndex = Math.floor(Math.random() * source.length);
+    candidate = source[randomIndex]?.value ?? firstPreset.value;
   }
 
   return candidate;
@@ -107,6 +119,12 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     if (!coords) {
       return 'нет координат'
     }
+    if (isVirtualCoordinates(coords)) {
+      return 'виртуальный город'
+    }
+    if (!hasGeoPoint(coords)) {
+      return 'нет координат'
+    }
     return `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`
   }, [])
 
@@ -126,6 +144,9 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
   }, [])
 
   const focusOnCoordinates = useCallback((coords: CityCoordinates) => {
+    if (!hasGeoPoint(coords)) {
+      return
+    }
     setMapState(prev => {
       const nextZoom = Math.max(prev.zoom, 10)
       const instance = mapRef.current as { setCenter?: (center: [number, number], zoom?: number) => void } | null
@@ -139,16 +160,26 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
   const applyCoordinates = useCallback((coords: CityCoordinates) => {
     const preset = normaliseMarkerPreset(coords.markerPreset)
+    const isVirtual = isVirtualCoordinates(coords) || isVirtualMarkerPreset(preset)
+    const nextCoordinates: CityCoordinates = {
+      ...coords,
+      lat: hasGeoPoint(coords) ? coords.lat : coords.lat ?? null,
+      lon: hasGeoPoint(coords) ? coords.lon : coords.lon ?? null,
+      markerPreset: preset,
+      isVirtual
+    }
+
     setSelectedMarkerPreset(preset)
-    const nextCoordinates: CityCoordinates = { ...coords, markerPreset: preset }
-    setSelectedCoordinates(prev => {
-      if (coordinatesAreEqual(prev, nextCoordinates)) {
-        return prev
-      }
-      return nextCoordinates
-    })
-    setManualLat(coords.lat.toFixed(6))
-    setManualLon(coords.lon.toFixed(6))
+    setSelectedCoordinates(prev => (coordinatesAreEqual(prev, nextCoordinates) ? prev : { ...nextCoordinates }))
+
+    if (hasGeoPoint(nextCoordinates)) {
+      setManualLat(nextCoordinates.lat.toFixed(6))
+      setManualLon(nextCoordinates.lon.toFixed(6))
+    } else {
+      setManualLat('')
+      setManualLon('')
+    }
+
     focusOnCoordinates(nextCoordinates)
   }, [focusOnCoordinates])
 
@@ -156,6 +187,13 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     const { silentOnEmpty = false } = options
     const trimmedLat = manualLat.trim()
     const trimmedLon = manualLon.trim()
+
+    if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+      if (!silentOnEmpty) {
+        showToast('Для виртуального города координаты не требуются', 'info')
+      }
+      return
+    }
 
     if (!trimmedLat || !trimmedLon) {
       if (!silentOnEmpty) {
@@ -170,7 +208,8 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
       return
     }
 
-    applyCoordinates({ ...parsed, markerPreset: selectedMarkerPresetRef.current })
+    const preset = normaliseMarkerPreset(selectedMarkerPresetRef.current)
+    applyCoordinates({ ...parsed, markerPreset: preset, isVirtual: false })
   }, [manualLat, manualLon, applyCoordinates, showToast])
 
   const geocodeCity = useCallback(async (query: string, options: { silent?: boolean; force?: boolean } = {}) => {
@@ -180,6 +219,13 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     if (!trimmed) {
       if (!silent) {
         showToast('Введите название города', 'warning')
+      }
+      return null
+    }
+
+    if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+      if (!silent) {
+        showToast('Виртуальный город не требует координат', 'info')
       }
       return null
     }
@@ -232,7 +278,8 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
         return null
       }
 
-      const coords: CityCoordinates = { lat, lon, markerPreset: selectedMarkerPresetRef.current }
+      const preset = normaliseMarkerPreset(selectedMarkerPresetRef.current)
+      const coords: CityCoordinates = { lat, lon, markerPreset: preset, isVirtual: false }
       lastGeocodedQuery.current = trimmed
       applyCoordinates(coords)
 
@@ -325,6 +372,10 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
       return
     }
 
+    if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+      return
+    }
+
     const timeoutId = window.setTimeout(() => {
       geocodeCity(trimmed, { silent: true })
     }, 700)
@@ -387,8 +438,7 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
   }, [groupedSynonyms, searchTerm])
 
   const citiesWithCoordinates = useMemo<CityGroupWithCoordinates[]>(
-    () =>
-      groupedSynonyms.filter((group): group is CityGroupWithCoordinates => Boolean(group.coordinates)),
+    () => groupedSynonyms.filter((group): group is CityGroupWithCoordinates => hasGeoPoint(group.coordinates)),
     [groupedSynonyms]
   )
 
@@ -554,8 +604,12 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     if (!newCity.trim()) {
       return
     }
+    if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+      showToast('Виртуальный город не отображается на карте', 'info')
+      return
+    }
     void geocodeCity(newCity, { force: true })
-  }, [geocodeCity, newCity])
+  }, [geocodeCity, newCity, showToast])
 
   const handleMapInstanceChange = useCallback((ref: unknown) => {
     mapRef.current = ref ?? null
@@ -563,9 +617,13 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
   const handleCoordinateSelection = useCallback(
     (lat: number, lon: number) => {
+      if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+        showToast('Для виртуального города координаты не используются', 'info')
+        return
+      }
       applyCoordinates({ lat, lon, markerPreset: selectedMarkerPresetRef.current })
     },
-    [applyCoordinates]
+    [applyCoordinates, showToast]
   )
 
   const handleManualLatChange = useCallback((value: string) => {
@@ -622,18 +680,22 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
   const handleMarkerPresetChange = useCallback(async (cityId: string, preset: string) => {
     const targetPreset = normaliseMarkerPreset(preset)
-    const recordWithCoordinates = synonyms.find(record => record.cityId === cityId && record.coordinates)?.coordinates
+    const recordCoordinates = synonyms.find(record => record.cityId === cityId && record.coordinates)?.coordinates ?? null
+    const isVirtualTarget = isVirtualMarkerPreset(targetPreset)
 
-    if (!recordWithCoordinates) {
+    if (!isVirtualTarget && (!recordCoordinates || !hasGeoPoint(recordCoordinates))) {
       showToast('Сначала задайте координаты города, затем выбирайте маркер', 'warning')
       return
     }
 
-    const nextCoordinates: CityCoordinates = { ...recordWithCoordinates, markerPreset: targetPreset }
+    const nextCoordinates: CityCoordinates = isVirtualTarget
+      ? { ...createVirtualCityCoordinates(), markerPreset: targetPreset }
+      : { ...recordCoordinates!, markerPreset: targetPreset, isVirtual: false }
+
     const matchesSelected =
       selectedCoordinates != null &&
-      Math.abs(selectedCoordinates.lat - recordWithCoordinates.lat) < 1e-6 &&
-      Math.abs(selectedCoordinates.lon - recordWithCoordinates.lon) < 1e-6
+      recordCoordinates != null &&
+      coordinatesAreEqual(selectedCoordinates, recordCoordinates)
 
     setMarkerUpdatingMap(prev => ({ ...prev, [cityId]: true }))
     try {
@@ -645,15 +707,15 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
       setSynonyms(prev =>
         prev.map(record =>
-          record.cityId === cityId && record.coordinates
-            ? { ...record, coordinates: { ...record.coordinates, markerPreset: targetPreset } }
+          record.cityId === cityId
+            ? { ...record, coordinates: nextCoordinates }
             : record
         )
       )
 
       if (matchesSelected) {
         setSelectedMarkerPreset(targetPreset)
-        setSelectedCoordinates(prev => (prev ? { ...prev, markerPreset: targetPreset } : prev))
+        setSelectedCoordinates(() => ({ ...nextCoordinates }))
       }
 
       showToast('Маркер города обновлён', 'success')
@@ -667,7 +729,20 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
   const handleCityNameClick = useCallback((group: CityGroup) => {
     if (group.coordinates) {
-      applyCoordinates({ ...group.coordinates, markerPreset: normaliseMarkerPreset(group.coordinates.markerPreset) })
+      if (isVirtualCoordinates(group.coordinates)) {
+        applyCoordinates(group.coordinates)
+        showToast('Это виртуальный город, координаты не требуются', 'info')
+        return
+      }
+
+      if (hasGeoPoint(group.coordinates)) {
+        applyCoordinates({ ...group.coordinates, markerPreset: normaliseMarkerPreset(group.coordinates.markerPreset) })
+        return
+      }
+    }
+
+    if (isVirtualMarkerPreset(selectedMarkerPresetRef.current)) {
+      showToast('Для виртуального маркера координаты не ищутся автоматически', 'info')
       return
     }
 
@@ -678,7 +753,24 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
   const handleNewCityMarkerPresetChange = useCallback((value: string) => {
     const preset = normaliseMarkerPreset(value)
     setSelectedMarkerPreset(preset)
-    setSelectedCoordinates(prev => (prev ? { ...prev, markerPreset: preset } : prev))
+
+    if (isVirtualMarkerPreset(preset)) {
+      setSelectedCoordinates(createVirtualCityCoordinates())
+      setManualLat('')
+      setManualLon('')
+      setMapState(() => createDefaultMapState())
+      return
+    }
+
+    setSelectedCoordinates(prev => {
+      if (!prev) {
+        return prev
+      }
+      if (!hasGeoPoint(prev)) {
+        return null
+      }
+      return { ...prev, markerPreset: preset, isVirtual: false }
+    })
   }, [])
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -688,8 +780,8 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
       return
     }
 
-    if (!selectedCoordinates) {
-      showToast('Подтвердите координаты города', 'error')
+    if (!selectedCoordinates || (!isVirtualCoordinates(selectedCoordinates) && !hasGeoPoint(selectedCoordinates))) {
+      showToast('Подтвердите координаты города или выберите виртуальный маркер', 'error')
       return
     }
 
@@ -735,6 +827,10 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
           }
         }
 
+        const normalisedEffective = effectiveCoordinates
+          ? { ...effectiveCoordinates, markerPreset: normaliseMarkerPreset(effectiveCoordinates.markerPreset) }
+          : null
+
         const createdRecords: CitySynonymRecord[] = []
 
         if (!createdCityId) {
@@ -745,11 +841,7 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
             cityId: createdCityId,
             cityName: createdCityName,
             synonym: payload.synonym,
-            coordinates:
-              effectiveCoordinates ??
-              (serverCoordinates
-                ? { ...serverCoordinates, markerPreset: normaliseMarkerPreset(serverCoordinates.markerPreset) }
-                : null),
+            coordinates: normalisedEffective ?? serverCoordinates ?? null,
             isFavorite: false
           })
 
@@ -768,11 +860,7 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
               cityId: createdCityId,
               cityName: createdCityName,
               synonym: synonymPayload.synonym,
-              coordinates:
-                effectiveCoordinates ??
-                (serverCoordinates
-                  ? { ...serverCoordinates, markerPreset: normaliseMarkerPreset(serverCoordinates.markerPreset) }
-                  : null),
+              coordinates: normalisedEffective ?? serverCoordinates ?? null,
               isFavorite: false
             })
           }

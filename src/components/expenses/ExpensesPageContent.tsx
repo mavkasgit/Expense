@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/useToast'
 import type { Category, ExpenseWithCategory } from '@/types'
 import Link from 'next/link'
 import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
-import { normaliseMarkerPreset, parseCityCoordinates } from '@/lib/utils/cityCoordinates'
+import { hasGeoPoint, normaliseMarkerPreset, parseCityCoordinates } from '@/lib/utils/cityCoordinates'
 
 interface ExpensesPageContentProps {
   initialExpenses: ExpenseWithCategory[]
@@ -138,6 +138,7 @@ export function ExpensesPageContent({
         {filteredExpenses.map((expense) => {
           const cityCoordinates = expense.city ? parseCityCoordinates(expense.city.coordinates ?? null) : null
           const markerPreset = cityCoordinates ? normaliseMarkerPreset(cityCoordinates.markerPreset) : undefined
+          const hasCityPoint = cityCoordinates ? hasGeoPoint(cityCoordinates) : false
           const cityLabel = expense.city?.name ?? expense.raw_city_input ?? null
 
           return (
@@ -184,7 +185,7 @@ export function ExpensesPageContent({
               <div className="flex-shrink-0">
                 {cityLabel && (
                   <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
-                    <CityMarkerIcon preset={markerPreset} active={Boolean(cityCoordinates)} />
+                    <CityMarkerIcon preset={markerPreset} active={hasCityPoint} />
                     <span className="max-w-[140px] truncate">{cityLabel}</span>
                   </div>
                 )}

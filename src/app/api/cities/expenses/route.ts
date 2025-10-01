@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { parseCityCoordinates, normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
+import { hasGeoPoint, isVirtualCoordinates, parseCityCoordinates, normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
 import { DEFAULT_MARKER_PRESET } from '@/lib/constants/cityMarkers'
 
 type CityExpensePeriod = '30d' | '90d' | '365d' | 'all'
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 
       const amount = typeof item.amount === 'number' ? item.amount : Number.parseFloat(String(item.amount ?? 0))
       const parsedCoordinates = parseCityCoordinates(city.coordinates)
-      const coordinates = parsedCoordinates
+      const coordinates = parsedCoordinates && hasGeoPoint(parsedCoordinates) && !isVirtualCoordinates(parsedCoordinates)
         ? { ...parsedCoordinates, markerPreset: normaliseMarkerPreset(parsedCoordinates.markerPreset) }
         : null
 
