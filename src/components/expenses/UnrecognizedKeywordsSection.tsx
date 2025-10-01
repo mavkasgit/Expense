@@ -48,6 +48,7 @@ export function UnrecognizedKeywordsSection({
   const [newKeywordName, setNewKeywordName] = useState('')
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
   const [selectedExistingKeywordId, setSelectedExistingKeywordId] = useState('')
+  const [showAllKeywords, setShowAllKeywords] = useState(false)
   const { showToast } = useToast()
 
   // Форматируем категории для SearchableSelect
@@ -65,6 +66,10 @@ export function UnrecognizedKeywordsSection({
     }
     return a.keyword.localeCompare(b.keyword, 'ru')
   })
+
+  // Ключевые слова для отображения (первые 5 или все)
+  const displayedKeywords = showAllKeywords ? sortedKeywords : sortedKeywords.slice(0, 5)
+  const hasMoreKeywords = sortedKeywords.length > 5
 
   // Загружаем неопознанные ключевые слова
   useEffect(() => {
@@ -253,10 +258,23 @@ export function UnrecognizedKeywordsSection({
   }
 
   const handleSelectAll = () => {
-    if (selectedKeywords.size === keywords.length) {
-      setSelectedKeywords(new Set())
+    const displayedIds = displayedKeywords.map(k => k.id)
+    const allDisplayedSelected = displayedIds.every(id => selectedKeywords.has(id))
+    
+    if (allDisplayedSelected) {
+      // Убираем выбор с отображаемых
+      setSelectedKeywords(prev => {
+        const newSet = new Set(prev)
+        displayedIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
     } else {
-      setSelectedKeywords(new Set(keywords.map(k => k.id)))
+      // Выбираем все отображаемые
+      setSelectedKeywords(prev => {
+        const newSet = new Set(prev)
+        displayedIds.forEach(id => newSet.add(id))
+        return newSet
+      })
     }
   }
 
@@ -413,7 +431,7 @@ export function UnrecognizedKeywordsSection({
                         <th className="text-left p-2 w-8">
                           <input
                             type="checkbox"
-                            checked={selectedKeywords.size === keywords.length && keywords.length > 0}
+                            checked={displayedKeywords.length > 0 && displayedKeywords.every(k => selectedKeywords.has(k.id))}
                             onChange={handleSelectAll}
                             className="rounded border-gray-300"
                           />
@@ -424,7 +442,7 @@ export function UnrecognizedKeywordsSection({
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedKeywords.map((keyword) => (
+                      {displayedKeywords.map((keyword) => (
                         <tr key={keyword.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="p-2">
                             <input
@@ -509,6 +527,21 @@ export function UnrecognizedKeywordsSection({
                     </tbody>
                   </table>
                 </div>
+
+                {hasMoreKeywords && (
+                  <div className="mt-4 text-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAllKeywords(!showAllKeywords)}
+                    >
+                      {showAllKeywords 
+                        ? `Показать только первые 5` 
+                        : `Показать все (${sortedKeywords.length})`
+                      }
+                    </Button>
+                  </div>
+                )}
               </>
             )}
           </>
