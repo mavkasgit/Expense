@@ -9,7 +9,7 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import { TimeInput, TimeInputRef } from '@/components/ui/TimeInput'
 import type { Category } from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
-import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
+import { CityInput } from '@/components/ui/CityInput'
 import { cn } from '@/lib/utils'
 import type { CityOption } from '@/lib/utils/cityOptions'
 
@@ -88,12 +88,12 @@ function CityCell({
       // If there are favorites, show them. Otherwise, just show the resolved city.
       return favorites.length > 0 ? favorites : (resolvedCity ? [resolvedCity] : []);
     }
-    
+
     // Otherwise, filter based on the query.
     const base = cityOptions.filter((option) =>
-        option.cityName.toLowerCase().includes(query) ||
-        option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
-      )
+      option.cityName.toLowerCase().includes(query) ||
+      option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
+    )
 
     return base.slice(0, 6)
   }, [cityOptions, value, resolvedCity])
@@ -182,72 +182,16 @@ function CityCell({
 
   return (
     <div className="space-y-1">
-      <div className="relative">
-        <Input
-          ref={inputRef}
-          type="text"
-          value={value || ''}
-          onChange={(event) => handleChange(event.target.value)}
-          onKeyDown={handleInputKeyDown}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          disabled={disabled}
-          placeholder="Город"
-          maxLength={100}
-          className={cn(
-            'pl-7 text-sm',
-            resolvedCity?.isFavorite && 'pl-11',
-            error ? 'ring-red-300 focus:ring-red-500' : ''
-          )}
-        />
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2">
-          <CityMarkerIcon
-            preset={resolvedCity?.markerPreset ?? undefined}
-            active={resolvedCity ? resolvedCity.hasCoordinates : false}
-          />
-        </div>
-        {resolvedCity?.isFavorite ? (
-          <span className="pointer-events-none absolute inset-y-0 left-7 z-20 flex items-center text-amber-400">★</span>
-        ) : null}
-        {isOpen && filteredCityOptions.length > 0 && (
-          <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-            <ul
-              className="max-h-48 overflow-auto py-1"
-              onMouseDown={(event) => event.preventDefault()}
-            >
-              {filteredCityOptions.map((option, index) => (
-                <li key={option.cityId}>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
-                      highlightedIndex === index
-                        ? 'bg-sky-50 text-sky-700'
-                        : 'text-slate-700 hover:bg-slate-50'
-                    )}
-                    onClick={() => handleSelect(option)}
-                  >
-                    <CityMarkerIcon
-                      preset={option.markerPreset ?? undefined}
-                      active={option.hasCoordinates}
-                    />
-                    {option.isFavorite && <span className="text-amber-400">★</span>}
-                    <span className="flex-1 truncate">{option.cityName}</span>
-                    {option.synonyms.length > 1 && (
-                      <span className="max-w-[140px] truncate text-[11px] text-slate-400">
-                        {option.synonyms
-                          .filter((synonym) => synonym !== option.cityName)
-                          .slice(0, 2)
-                          .join(', ')}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+      <CityInput
+        value={value || ''}
+        onChange={handleChange}
+        onCitySelect={(cityId) => onCityIdChange(cityId)}
+        cityOptions={filteredCityOptions}
+        resolvedCity={resolvedCity}
+        disabled={disabled}
+        placeholder="Город"
+        className={cn('text-sm', error && 'ring-red-300 focus:ring-red-500')}
+      />
       {error && <ErrorMessage error={error} />}
     </div>
   )
@@ -373,7 +317,7 @@ export function BulkExpenseTable({
                   </td>
 
                   {/* Сумма */}
-                  <td 
+                  <td
                     className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
                     onClick={(e) => {
                       const input = e.currentTarget.querySelector('input')
@@ -399,7 +343,7 @@ export function BulkExpenseTable({
                   </td>
 
                   {/* Описание */}
-                  <td 
+                  <td
                     className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
                     onClick={(e) => {
                       const input = e.currentTarget.querySelector('input')
@@ -446,7 +390,7 @@ export function BulkExpenseTable({
                   </td>
 
                   {/* Дата */}
-                  <td 
+                  <td
                     className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
                     onClick={(e) => {
                       const input = e.currentTarget.querySelector('input')
@@ -506,7 +450,7 @@ export function BulkExpenseTable({
                   </td>
 
                   {/* Примечания */}
-                  <td 
+                  <td
                     className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
                     onClick={(e) => {
                       const input = e.currentTarget.querySelector('input')

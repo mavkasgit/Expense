@@ -9,6 +9,34 @@ import {
   type UpdateCityFavoriteData
 } from '@/lib/validations/cities';
 
+export async function getCities() {
+  const supabase = await createServerClient();
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' };
+    }
+
+    const { data: cities, error } = await supabase
+      .from('cities')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Ошибка получения городов:', error);
+      return { error: 'Не удалось загрузить города' };
+    }
+
+    return { success: true, data: cities || [] };
+  } catch (err) {
+    console.error('Ошибка получения городов:', err);
+    return { error: 'Произошла ошибка при загрузке городов' };
+  }
+}
+
+
 export async function updateCityCoordinates(data: UpdateCityCoordinatesData) {
   const supabase = await createServerClient();
 

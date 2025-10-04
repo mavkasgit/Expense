@@ -1,17 +1,20 @@
 import { Suspense } from 'react'
 import { getExpenses } from '@/lib/actions/expenses'
 import { getCategories } from '@/lib/actions/categories'
+import { getCities } from '@/lib/actions/cities'
 import { StickyPageHeaderWrapper } from '@/components/layout/StickyPageHeaderWrapper'
 import { ExpensesPageContent } from '@/components/expenses/ExpensesPageContent'
 
 async function ExpensesPage() {
-  const [expensesResult, categoriesResult] = await Promise.all([
+  const [expensesResult, categoriesResult, citiesResult] = await Promise.all([
     getExpenses({ limit: 50 }),
-    getCategories()
+    getCategories(),
+    getCities(),
   ])
 
   const expenses = expensesResult.data || []
   const categories = categoriesResult.data || []
+  const cities = citiesResult.data || []
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -25,6 +28,7 @@ async function ExpensesPage() {
           <ExpensesPageContent 
             initialExpenses={expenses}
             categories={categories}
+            cities={cities}
             error={expensesResult.error}
           />
         </div>

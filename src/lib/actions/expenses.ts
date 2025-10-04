@@ -248,6 +248,119 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
       }
     }
 
+    if (validatedData.city_input !== undefined) {
+      const resolveCityByInput = async (value: string) => {
+        const normalized = value.trim()
+        if (!normalized) {
+          return null
+        }
+  
+        const { data: directCity } = await supabase
+          .from('cities')
+          .select('id, name')
+          .eq('user_id', user.id)
+          .ilike('name', normalized)
+          .maybeSingle()
+  
+        if (directCity?.id) {
+          return directCity
+        }
+  
+        const { data: synonymMatch } = await supabase
+          .from('city_synonyms')
+          .select('city_id, city:cities(id, name)')
+          .eq('user_id', user.id)
+          .ilike('synonym', normalized)
+          .maybeSingle()
+  
+        if (synonymMatch?.city_id && synonymMatch.city) {
+          return synonymMatch.city as { id: string; name: string }
+        }
+  
+        const { data: aliasMatch } = await supabase
+          .from('city_aliases')
+          .select('city_id, city:cities(id, name)')
+          .eq('user_id', user.id)
+          .ilike('name', normalized)
+          .maybeSingle()
+  
+        if (aliasMatch?.city) {
+          return aliasMatch.city as { id: string; name: string }
+        }
+  
+        return null
+      }
+  
+      const rememberUnrecognizedCity = async (value: string) => {
+        const normalized = value.trim()
+        if (!normalized) {
+          return
+        }
+  
+        try {
+          const { data: existing } = await supabase
+            .from('unrecognized_cities')
+            .select('id, frequency')
+            .eq('user_id', user.id)
+            .ilike('name', normalized)
+            .maybeSingle()
+  
+          const now = new Date().toISOString()
+  
+          if (existing?.id) {
+            await supabase
+              .from('unrecognized_cities')
+              .update({
+                frequency: (existing.frequency ?? 0) + 1,
+                last_seen: now
+              })
+              .eq('id', existing.id)
+          } else {
+            await supabase
+              .from('unrecognized_cities')
+              .insert({
+                user_id: user.id,
+                name: normalized,
+                frequency: 1,
+                first_seen: now,
+                last_seen: now
+              })
+          }
+        } catch (rememberError) {
+          console.error('Не удалось сохранить непознанный город', rememberError)
+        }
+      }
+
+      const trimmedCityInput = (validatedData.city_input ?? '').trim()
+      let resolvedCityId: string | null = null
+
+      if (validatedData.city_id) {
+        const { data: existingCity } = await supabase
+          .from('cities')
+          .select('id')
+          .eq('id', validatedData.city_id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (existingCity?.id) {
+          resolvedCityId = existingCity.id
+        }
+      }
+
+      if (!resolvedCityId && trimmedCityInput) {
+        const matchedCity = await resolveCityByInput(trimmedCityInput)
+        if (matchedCity?.id) {
+          resolvedCityId = matchedCity.id
+        } else {
+          await rememberUnrecognizedCity(trimmedCityInput)
+        }
+      }
+
+      updateData.city_id = resolvedCityId
+      updateData.raw_city_input = trimmedCityInput || null
+      delete updateData.city_input
+    }
+
     // Обновляем расход
     const { data: expense, error } = await supabase
       .from('expenses')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef, useMemo, useCallback, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -10,14 +10,20 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import { TimeInput } from '@/components/ui/TimeInput'
 import { updateExpense } from '@/lib/actions/expenses'
 import { useToast } from '@/hooks/useToast'
-import type { ExpenseWithCategory, Category } from '@/types'
+import type { ExpenseWithCategory, Category, City, CitySynonymOptionRecord } from '@/types'
 import type { UpdateExpenseData } from '@/lib/validations/expenses'
+import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
+import { cn } from '@/lib/utils'
+import { CityInput } from '@/components/ui/CityInput'
+import { parseCityCoordinates, normaliseMarkerPreset, hasGeoPoint, isVirtualCoordinates } from '@/lib/utils/cityCoordinates'
+import { availableIcons } from '@/lib/utils/category-constants'
 
 const NO_CATEGORY = 'NO_CATEGORY'
 
 interface ExpenseEditModalProps {
   expense: ExpenseWithCategory
   categories: Category[]
+  cities: City[]
   isOpen: boolean
   onClose: () => void
   onSuccess?: (updatedExpense: any) => void
@@ -26,13 +32,19 @@ interface ExpenseEditModalProps {
 export function ExpenseEditModal({
   expense,
   categories,
+  cities,
   isOpen,
   onClose,
   onSuccess
 }: ExpenseEditModalProps) {
   const [isPending, startTransition] = useTransition()
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [timeError, setTimeError] = useState(false)
   const { showToast } = useToast()
+  const cityInputRef = useRef<HTMLInputElement>(null)
+  const cityDropdownTimeoutRef = useRef<number | null>(null)
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false)
+  const [highlightedCityIndex, setHighlightedCityIndex] = useState(0)
 
   // Состояние формы
   const [formData, setFormData] = useState({
@@ -41,8 +53,68 @@ export function ExpenseEditModal({
     notes: expense.notes || '',
     category_id: expense.category_id || '',
     expense_date: expense.expense_date,
-    expense_time: expense.expense_time || ''
+    expense_time: expense.expense_time || '',
+    cityInput: expense.city?.name || expense.raw_city_input || '',
+    cityId: expense.city_id || '',
   })
+
+  const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(() => {
+    const citySynonymRecords: CitySynonymOptionRecord[] = cities.map(city => {
+      const parsedCoordinates = parseCityCoordinates(city.coordinates ?? null)
+      return {
+        id: 0, // Not used in buildCityOptions
+        cityId: city.id,
+        cityName: city.name,
+        synonym: city.name,
+        markerPreset: parsedCoordinates ? normaliseMarkerPreset(parsedCoordinates.markerPreset) : null,
+        hasCoordinates: Boolean(parsedCoordinates && hasGeoPoint(parsedCoordinates) && !isVirtualCoordinates(parsedCoordinates)),
+        isFavorite: city.is_favorite || false,
+      }
+    })
+    return buildCityOptions(citySynonymRecords)
+  }, [cities])
+
+  const resolveCityByInput = useCallback((value: string): CityOption | null => {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized) {
+      return null
+    }
+    return cityLookupBySynonym.get(normalized) ?? null
+  }, [cityLookupBySynonym])
+
+  const resolvedCity = useMemo(() => {
+    if (formData.cityId) {
+      return cityLookupById.get(formData.cityId) ?? null
+    }
+    if (formData.cityInput) {
+      return resolveCityByInput(formData.cityInput)
+    }
+    return null
+  }, [cityLookupById, formData.cityId, formData.cityInput, resolveCityByInput])
+
+  const filteredCityOptions = useMemo(() => {
+    const query = formData.cityInput.trim().toLowerCase()
+
+    if (!query) {
+      const favorites = cityOptions.filter(option => option.isFavorite);
+      if (favorites.length > 0) {
+        return favorites.slice(0, 6);
+      }
+      return cityOptions.slice(0, 6);
+    }
+
+    if (resolvedCity && query === resolvedCity.cityName.toLowerCase()) {
+      const favorites = cityOptions.filter(option => option.isFavorite);
+      return favorites.length > 0 ? favorites : [resolvedCity];
+    }
+
+    const base = cityOptions.filter((option) =>
+      option.cityName.toLowerCase().includes(query) ||
+      option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
+    )
+
+    return base.slice(0, 6)
+  }, [cityOptions, formData.cityInput, resolvedCity])
 
   // Валидация поля
   const validateField = (name: string, value: any) => {
@@ -95,7 +167,7 @@ export function ExpenseEditModal({
           const date = new Date(value)
           const now = new Date()
           const maxDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate())
-          
+
           if (isNaN(date.getTime())) {
             newErrors.expense_date = 'Неверный формат даты'
           } else if (date > maxDate) {
@@ -116,6 +188,86 @@ export function ExpenseEditModal({
     validateField(name, value)
   }
 
+  const handleCityInputChange = (value: string) => {
+    const match = resolveCityByInput(value)
+    setFormData(prev => ({
+      ...prev,
+      cityInput: value,
+      cityId: match?.cityId ?? ''
+    }))
+    setIsCityDropdownOpen(Boolean(value))
+    setHighlightedCityIndex(0)
+  }
+
+  const handleCitySelect = (option: CityOption) => {
+    setFormData(prev => ({
+      ...prev,
+      cityInput: option.cityName,
+      cityId: option.cityId
+    }))
+    setIsCityDropdownOpen(false)
+    if (cityInputRef.current) {
+      cityInputRef.current.blur()
+    }
+  }
+
+  const handleCityInputFocus = () => {
+    if (cityDropdownTimeoutRef.current) {
+      window.clearTimeout(cityDropdownTimeoutRef.current)
+      cityDropdownTimeoutRef.current = null
+    }
+    if (filteredCityOptions.length > 0) {
+      setIsCityDropdownOpen(true)
+    }
+  }
+
+  const handleCityInputBlur = () => {
+    cityDropdownTimeoutRef.current = window.setTimeout(() => {
+      setIsCityDropdownOpen(false)
+    }, 120)
+  }
+
+  const handleCityKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (!isCityDropdownOpen) {
+        setIsCityDropdownOpen(true)
+        setHighlightedCityIndex(0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedCityIndex(prev => (prev + 1) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!isCityDropdownOpen) {
+        setIsCityDropdownOpen(true)
+        setHighlightedCityIndex(filteredCityOptions.length > 0 ? filteredCityOptions.length - 1 : 0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedCityIndex(prev => (prev - 1 + filteredCityOptions.length) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'Enter') {
+      if (isCityDropdownOpen && filteredCityOptions[highlightedCityIndex]) {
+        event.preventDefault()
+        handleCitySelect(filteredCityOptions[highlightedCityIndex])
+        return
+      }
+      return
+    }
+
+    if (event.key === 'Escape') {
+      setIsCityDropdownOpen(false)
+    }
+  }
+
   // Сброс формы при открытии модала
   useEffect(() => {
     if (isOpen) {
@@ -125,7 +277,9 @@ export function ExpenseEditModal({
         notes: expense.notes || '',
         category_id: expense.category_id || NO_CATEGORY,
         expense_date: expense.expense_date,
-        expense_time: expense.expense_time || ''
+        expense_time: expense.expense_time || '',
+        cityInput: expense.city?.name || expense.raw_city_input || '',
+        cityId: expense.city_id || '',
       })
       setErrors({})
     }
@@ -150,29 +304,34 @@ export function ExpenseEditModal({
       try {
         // Подготавливаем данные для обновления (только измененные поля)
         const updateData: UpdateExpenseData = {}
-        
+
         if (formData.amount !== expense.amount) {
           updateData.amount = formData.amount
         }
-        
+
         if (formData.description !== (expense.description || '')) {
           updateData.description = formData.description || undefined
         }
-        
+
         if (formData.notes !== (expense.notes || '')) {
           updateData.notes = formData.notes || undefined
         }
-        
+
         if (formData.category_id !== (expense.category_id || NO_CATEGORY)) {
           updateData.category_id = formData.category_id === NO_CATEGORY ? null : formData.category_id
         }
-        
+
         if (formData.expense_date !== expense.expense_date) {
           updateData.expense_date = formData.expense_date
         }
-        
+
         if (formData.expense_time !== (expense.expense_time || '')) {
           updateData.expense_time = formData.expense_time || undefined
+        }
+
+        if (formData.cityInput !== (expense.city?.name || expense.raw_city_input || '')) {
+          updateData.city_id = resolvedCity?.cityId
+          updateData.city_input = formData.cityInput
         }
 
         // Если нет изменений, просто закрываем модал
@@ -189,12 +348,12 @@ export function ExpenseEditModal({
         }
 
         showToast('Расход обновлен', 'success')
-        
+
         // Вызываем callback
         if (onSuccess) {
           onSuccess(result.data)
         }
-        
+
         onClose()
       } catch (error) {
         console.error('Ошибка обновления расхода:', error)
@@ -203,13 +362,22 @@ export function ExpenseEditModal({
     })
   }
 
-  // Опции категорий для селекта
+  // Опции категорий для селекта с иконками и цветами
   const categoryOptions = [
-    { value: '', label: 'Без категории' },
-    ...categories.map(category => ({
-      value: category.id,
-      label: category.name
-    }))
+    { 
+      value: '', 
+      label: 'Без категории',
+      icon: <span className="text-gray-400">📦</span>
+    },
+    ...categories.map(category => {
+      const iconData = availableIcons.find(icon => icon.key === category.icon)
+      return {
+        value: category.id,
+        label: category.name,
+        color: category.color,
+        icon: iconData ? <span>{iconData.emoji}</span> : <span className="text-gray-400">📦</span>
+      }
+    })
   ]
 
   return (
@@ -264,6 +432,7 @@ export function ExpenseEditModal({
             <TimeInput
               value={formData.expense_time}
               onChange={(value) => handleFieldChange('expense_time', value)}
+              onError={setTimeError}
               disabled={isPending}
               className={errors.expense_time ? 'ring-red-500' : ''}
             />
@@ -271,27 +440,60 @@ export function ExpenseEditModal({
           </div>
         </div>
 
-        {/* Описание */}
+        {/* Описание и Город на одной строке */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Описание */}
+          <div>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+              Описание
+            </label>
+            <Input
+              id="description"
+              type="text"
+              value={formData.description}
+              onChange={(e) => handleFieldChange('description', e.target.value)}
+              placeholder="Описание расхода..."
+              maxLength={500}
+              className={errors.description ? 'border-red-500' : ''}
+              disabled={isPending}
+            />
+            {errors.description && <ErrorMessage error={errors.description} />}
+            {formData.description && (
+              <div className="text-xs text-gray-500 mt-1">
+                {formData.description.length}/500 символов
+              </div>
+            )}
+          </div>
+
+          {/* Город */}
+          <div>
+            <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
+              Город
+            </label>
+            <CityInput
+              value={formData.cityInput}
+              onChange={(value) => handleCityInputChange(value)}
+              onCitySelect={(cityId) => setFormData(prev => ({ ...prev, cityId }))}
+              cityOptions={filteredCityOptions}
+              resolvedCity={resolvedCity}
+              disabled={isPending}
+              placeholder="Введите город..."
+            />
+          </div>
+        </div>
+
+        {/* Категория */}
         <div>
-          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-            Описание
+          <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+            Категория
           </label>
-          <Input
-            id="description"
-            type="text"
-            value={formData.description}
-            onChange={(e) => handleFieldChange('description', e.target.value)}
-            placeholder="Описание расхода..."
-            maxLength={500}
-            className={errors.description ? 'border-red-500' : ''}
+          <SearchableSelect
+            options={categoryOptions}
+            value={formData.category_id}
+            onChange={(value) => handleFieldChange('category_id', value)}
+            placeholder="Выберите категорию..."
             disabled={isPending}
           />
-          {errors.description && <ErrorMessage error={errors.description} />}
-          {formData.description && (
-            <div className="text-xs text-gray-500 mt-1">
-              {formData.description.length}/500 символов
-            </div>
-          )}
         </div>
 
         {/* Примечание */}
@@ -317,30 +519,16 @@ export function ExpenseEditModal({
           )}
         </div>
 
-        {/* Категория */}
-        <div>
-          <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
-            Категория
-          </label>
-          <SearchableSelect
-            options={categoryOptions}
-            value={formData.category_id}
-            onChange={(value) => handleFieldChange('category_id', value)}
-            placeholder="Выберите категорию..."
-            disabled={isPending}
-          />
-        </div>
-
         {/* Кнопки */}
         <div className="flex gap-3 pt-4">
           <Button
             type="submit"
-            disabled={isPending || Object.keys(errors).length > 0}
+            disabled={isPending || Object.keys(errors).length > 0 || timeError}
             className="flex-1"
           >
             {isPending ? 'Сохранение...' : 'Сохранить изменения'}
           </Button>
-          
+
           <Button
             type="button"
             variant="outline"

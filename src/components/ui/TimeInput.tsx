@@ -8,6 +8,7 @@ interface TimeInputProps {
   onChange?: (value: string) => void
   onKeyPress?: (e: React.KeyboardEvent) => void
   onFocus?: () => void
+  onError?: (hasError: boolean) => void
   disabled?: boolean
   className?: string
   placeholder?: string
@@ -23,169 +24,155 @@ export const TimeInput = forwardRef<TimeInputRef, TimeInputProps>(function TimeI
   onChange,
   onKeyPress,
   onFocus,
+  onError,
   disabled = false,
   className = '',
-  placeholder = 'ЧЧ:ММ',
+  placeholder = 'ЧЧММ',
   title = 'Время'
 }, ref) {
-  const [hours, setHours] = useState('')
-  const [minutes, setMinutes] = useState('')
-  const [focused, setFocused] = useState(false)
-  const hoursRef = useRef<HTMLInputElement>(null)
-  const minutesRef = useRef<HTMLInputElement>(null)
+  const [inputValue, setInputValue] = useState('')
+  const [isInvalid, setIsInvalid] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Предоставляем методы для родительского компонента
   useImperativeHandle(ref, () => ({
     focus: () => {
-      hoursRef.current?.focus()
+      inputRef.current?.focus()
     }
   }))
 
-  // Парсим входящее значение
+  // Парсим входящее значение HH:MM в HHMM
   useEffect(() => {
     if (value && value.includes(':')) {
       const [h, m] = value.split(':')
-      setHours(h || '')
-      setMinutes(m || '')
+      setInputValue((h || '') + (m || ''))
     } else if (!value) {
-      setHours('')
-      setMinutes('')
+      setInputValue('')
     }
   }, [value])
 
-  // Форматируем и отправляем значение
-  const updateValue = (newHours: string, newMinutes: string) => {
-    if (newHours && newMinutes) {
-      const formattedTime = `${newHours.padStart(2, '0')}:${newMinutes.padStart(2, '0')}`
-      onChange?.(formattedTime)
-    } else if (!newHours && !newMinutes) {
+  // Форматируем 4-значное число в HH:MM
+  const formatTimeValue = (rawValue: string) => {
+    if (!rawValue) return ''
+    
+    const digits = rawValue.padStart(4, '0')
+    const hours = digits.slice(0, 2)
+    const minutes = digits.slice(2, 4)
+    
+    // Валидация
+    const h = parseInt(hours)
+    const m = parseInt(minutes)
+    
+    if (h > 23 || m > 59) {
+      return '' // Невалидное время
+    }
+    
+    return `${hours}:${minutes}`
+  }
+
+  // Отображаемое значение с двоеточием
+  const displayValue = () => {
+    if (!inputValue) return ''
+    
+    if (inputValue.length <= 2) {
+      return inputValue
+    } else {
+      // Всегда берем первые 2 символа как часы
+      const hours = inputValue.slice(0, 2)
+      const minutes = inputValue.slice(2)
+      return minutes ? `${hours}:${minutes}` : hours
+    }
+  }
+
+  // Обработка изменения
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let newValue = e.target.value.replace(/\D/g, '') // Только цифры
+    
+    // Ограничиваем до 4 цифр
+    if (newValue.length > 4) {
+      newValue = newValue.slice(0, 4)
+    }
+    
+    // Проверяем валидность
+    let invalid = false
+    if (newValue.length >= 2) {
+      const hours = parseInt(newValue.slice(0, 2))
+      if (hours > 23) {
+        invalid = true
+      }
+    }
+    
+    if (newValue.length === 4) {
+      const minutes = parseInt(newValue.slice(2, 4))
+      if (minutes > 59) {
+        invalid = true
+      }
+    }
+    
+    setInputValue(newValue)
+    setIsInvalid(invalid)
+    onError?.(invalid)
+    
+    // Форматируем только при валидных 4 цифрах
+    if (newValue.length === 4 && !invalid) {
+      const formatted = formatTimeValue(newValue)
+      if (formatted) {
+        onChange?.(formatted)
+      }
+    } else if (newValue.length === 0) {
+      setIsInvalid(false)
+      onError?.(false)
       onChange?.('')
     }
   }
 
-  // Обработка изменения часов
-  const handleHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let newValue = e.target.value.replace(/\D/g, '') // Только цифры
-    
-    if (newValue.length > 2) {
-      newValue = newValue.slice(0, 2)
-    }
-    
-    if (newValue && parseInt(newValue) > 23) {
-      newValue = '23'
-    }
-    
-    setHours(newValue)
-    updateValue(newValue, minutes)
-    
-    // Автопереход к минутам при вводе 2 цифр
-    if (newValue.length === 2) {
-      minutesRef.current?.focus()
-    }
-  }
-
-  // Обработка изменения минут
-  const handleMinutesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let newValue = e.target.value.replace(/\D/g, '') // Только цифры
-    
-    if (newValue.length > 2) {
-      newValue = newValue.slice(0, 2)
-    }
-    
-    if (newValue && parseInt(newValue) > 59) {
-      newValue = '59'
-    }
-    
-    setMinutes(newValue)
-    updateValue(hours, newValue)
+  // Обработка фокуса с выделением всего текста
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select()
+    onFocus?.()
   }
 
   // Обработка клавиш
-  const handleKeyDown = (e: React.KeyboardEvent, field: 'hours' | 'minutes') => {
-    // Передаем событие родителю для обработки Enter
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       onKeyPress?.(e)
       return
     }
-
-    // Навигация между полями
-    if (e.key === 'ArrowRight' && field === 'hours') {
-      e.preventDefault()
-      minutesRef.current?.focus()
-    } else if (e.key === 'ArrowLeft' && field === 'minutes') {
-      e.preventDefault()
-      hoursRef.current?.focus()
+    
+    // Разрешаем навигационные клавиши
+    if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+      return
     }
     
-    // Backspace в пустом поле минут переходит к часам
-    if (e.key === 'Backspace' && field === 'minutes' && !minutes) {
+    // Разрешаем только цифры
+    if (!/\d/.test(e.key)) {
       e.preventDefault()
-      hoursRef.current?.focus()
-    }
-    
-    // Двоеточие переходит к минутам
-    if (e.key === ':' && field === 'hours') {
-      e.preventDefault()
-      minutesRef.current?.focus()
     }
   }
 
-  const baseStyles = 'block w-full rounded-md border-0 py-2 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6 transition-colors'
-  const focusStyles = focused ? 'ring-2 ring-indigo-600' : 'ring-gray-300'
-  const disabledStyles = disabled ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'bg-white'
-
   return (
     <div className={cn('relative', className)} title={title}>
-      <div
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        value={displayValue()}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onFocus={handleFocus}
+        disabled={disabled}
+        placeholder={placeholder}
         className={cn(
-          'flex items-center gap-1 border rounded-md px-1.5 py-2 bg-white',
-          focused ? 'ring-2 ring-indigo-600 border-transparent' : 'border-gray-300',
-          disabled && 'bg-gray-50 cursor-not-allowed'
+          'w-full px-3 py-2 border rounded-md',
+          'focus:outline-none focus:ring-2 focus:border-transparent',
+          'bg-white text-gray-900 placeholder:text-gray-400',
+          isInvalid 
+            ? 'border-red-500 focus:ring-red-500' 
+            : 'border-gray-300 focus:ring-indigo-600',
+          disabled && 'bg-gray-50 text-gray-500 cursor-not-allowed'
         )}
-        onClick={() => {
-          if (!disabled) {
-            hoursRef.current?.focus()
-          }
-        }}
-        onFocus={() => {
-          setFocused(true)
-          onFocus?.()
-        }}
-        onBlur={() => setFocused(false)}
-      >
-        {/* Поле часов */}
-        <input
-          ref={hoursRef}
-          type="text"
-          inputMode="numeric"
-          value={hours}
-          onChange={handleHoursChange}
-          onKeyDown={(e) => handleKeyDown(e, 'hours')}
-          disabled={disabled}
-          placeholder="ЧЧ"
-          className="w-7 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
-          maxLength={2}
-        />
-        
-        {/* Разделитель */}
-        <span className="text-gray-500 mx-0.5">:</span>
-
-        {/* Поле минут */}
-        <input
-          ref={minutesRef}
-          type="text"
-          inputMode="numeric"
-          value={minutes}
-          onChange={handleMinutesChange}
-          onKeyDown={(e) => handleKeyDown(e, 'minutes')}
-          disabled={disabled}
-          placeholder="ММ"
-          className="w-7 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
-          maxLength={2}
-        />
-      </div>
-
-
+        maxLength={5} // ЧЧММ + двоеточие
+      />
     </div>
   )
 })

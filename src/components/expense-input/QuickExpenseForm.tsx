@@ -20,7 +20,7 @@ import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
 import { useCitySynonyms } from '@/hooks/useCitySynonyms'
-import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
+import { CityInput } from '@/components/ui/CityInput'
 import { normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
 import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
 import { cn } from '@/lib/utils'
@@ -360,71 +360,15 @@ export function QuickExpenseForm({
 
         {/* Город */}
         <div className="grid grid-cols-1 gap-2">
-          <div className="relative">
-            <Input
-              ref={cityInputRef}
-              type="text"
-              value={formData.cityInput}
-              onChange={(e) => handleCityInputChange(e.target.value)}
-              onKeyDown={handleCityKeyDown}
-              onFocus={handleCityInputFocus}
-              onBlur={handleCityInputBlur}
-              placeholder="Город"
-              disabled={isPending}
-              maxLength={100}
-              className={cn('pl-7', resolvedCity?.isFavorite && 'pl-11')}
-            />
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2">
-              <CityMarkerIcon
-                preset={resolvedMarkerPreset}
-                active={resolvedCity ? resolvedCity.hasCoordinates : false}
-              />
-            </div>
-          {resolvedCity?.isFavorite ? (
-            <span className="pointer-events-none absolute inset-y-0 left-7 z-20 flex items-center text-amber-400">★</span>
-          ) : null}
-            {isCityDropdownOpen && filteredCityOptions.length > 0 && (
-              <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-                <ul
-                  className="max-h-48 overflow-auto py-1"
-                  onMouseDown={(event) => event.preventDefault()}
-                >
-                  {filteredCityOptions.map((option, index) => {
-                    const preset = option.markerPreset ? normaliseMarkerPreset(option.markerPreset) : undefined
-                    const secondaryLabels = option.synonyms
-                      .filter((synonym) => synonym !== option.cityName)
-                      .slice(0, 2)
-
-                    return (
-                      <li key={option.cityId}>
-                        <button
-                          type="button"
-                          className={cn(
-                            'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
-                            highlightedCityIndex === index
-                              ? 'bg-sky-50 text-sky-700'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          )}
-                          onClick={() => handleCitySelect(option)}
-                        >
-                          <CityMarkerIcon preset={preset} active={option.hasCoordinates} />
-                          {option.isFavorite && (
-                            <span className="text-amber-400">★</span>
-                          )}
-                          <span className="flex-1 truncate">{option.cityName}</span>
-                          {secondaryLabels.length > 0 && (
-                            <span className="max-w-[140px] truncate text-[11px] text-slate-400">
-                              {secondaryLabels.join(', ')}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
+          <CityInput
+            value={formData.cityInput}
+            onChange={(value) => handleCityInputChange(value)}
+            onCitySelect={(cityId) => setFormData(prev => ({ ...prev, cityId }))}
+            cityOptions={filteredCityOptions}
+            resolvedCity={resolvedCity}
+            disabled={isPending}
+            placeholder="Город"
+          />
           <div className="min-h-[1rem] text-xs text-slate-500">
             {formData.cityInput
               ? resolvedCity

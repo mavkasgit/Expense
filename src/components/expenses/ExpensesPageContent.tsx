@@ -14,16 +14,19 @@ import type { Category, ExpenseWithCategory } from '@/types'
 import Link from 'next/link'
 import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
 import { hasGeoPoint, normaliseMarkerPreset, parseCityCoordinates } from '@/lib/utils/cityCoordinates'
+import type { City } from '@/types'
 
 interface ExpensesPageContentProps {
   initialExpenses: ExpenseWithCategory[]
   categories: Category[]
+  cities: City[]
   error?: string
 }
 
 export function ExpensesPageContent({ 
   initialExpenses, 
   categories, 
+  cities,
   error 
 }: ExpensesPageContentProps) {
   const [showUnrecognizedKeywords, setShowUnrecognizedKeywords] = useState(true)
@@ -261,6 +264,7 @@ export function ExpensesPageContent({
         <ExpenseEditModal
           expense={editingExpense}
           categories={categories}
+          cities={cities}
           isOpen={!!editingExpense}
           onClose={() => setEditingExpense(null)}
           onSuccess={handleExpenseUpdate}
