@@ -5,15 +5,15 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button, Input } from '@/components/ui';
 import { useState, useRef, useEffect } from 'react';
 import type { CategoryGroup } from '@/types';
-import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/constants';
+import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/category-constants';
+import { IconPicker } from '@/components/ui/IconPicker';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 
 function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSave: Function, onCancel: Function }) {
   const [name, setName] = useState(group.name);
   const [color, setColor] = useState(group.color || '#6b7280');
-  const [icon, setIcon] = useState(group.icon || 'other');
-  const [iconSearch, setIconSearch] = useState('');
+  const [icon, setIcon] = useState(group.icon || 'folder');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {    
@@ -25,12 +25,7 @@ function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSa
     }, 100);
   }, []);
 
-  const selectedIconEmoji = availableIcons.find(i => i.key === icon)?.emoji;
 
-  const filteredIcons = availableIcons.filter(i => 
-    i.names.some(name => name.toLowerCase().includes(iconSearch.toLowerCase())) ||
-    i.emoji.includes(iconSearch)
-  );
 
   return (
     <div className="flex-1 space-y-3 p-4 bg-gray-50 border-t">
@@ -46,26 +41,10 @@ function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSa
         }}
       />
       <div className="flex items-center gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="flex items-center gap-2">
-              <span className="text-xl">{selectedIconEmoji}</span>
-              <span>Иконка</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[320px] p-2">
-            <Input 
-              placeholder="Поиск иконки..."
-              value={iconSearch}
-              onChange={e => setIconSearch(e.target.value)}
-              className="mb-2"
-              autoComplete="new-password"
-            />
-            <div className="grid grid-cols-7 gap-1">
-              {filteredIcons.map(i => <button key={i.key} type="button" onClick={() => setIcon(i.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${icon === i.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{i.emoji}</button>)}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <IconPicker
+          value={icon}
+          onChange={setIcon}
+        />
 
         <Popover>
           <PopoverTrigger asChild>
@@ -110,7 +89,7 @@ export function SortableGroupItem({ group, onEdit, onDelete, onSave, onCancel, e
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
           </button>
           <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl" style={{ backgroundColor: (group.color || '#ccc') + '20' }}>
-            <span>{availableIcons.find(icon => icon.key === group.icon)?.emoji || '📦'}</span>
+            <span>{availableIcons.find(icon => icon.key === group.icon)?.emoji || '📁'}</span>
           </div>
           <div>
             <div className="font-medium text-gray-900">{group.name}</div>

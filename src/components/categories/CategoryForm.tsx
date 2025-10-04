@@ -6,6 +6,7 @@ import { createCategory, updateCategory, getCategoryGroups } from '@/lib/actions
 import type { Category, CreateCategoryData, CategoryGroup } from '@/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { IconPicker } from '@/components/ui/IconPicker';
 import { availableColors, availableIcons, getRandomColor } from '@/lib/utils/category-constants';
 
 interface CategoryFormProps {
@@ -24,7 +25,6 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
   const [groups, setGroups] = useState<CategoryGroup[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [iconSearch, setIconSearch] = useState('')
   const nameInputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
@@ -42,12 +42,12 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
         const result = await getCategoryGroups()
         if ('success' in result && result.data) {
           setGroups(result.data)
-        } 
+        }
       } catch (error) {
         toast.error('Не удалось загрузить группы')
       }
     }
-    
+
     loadGroups()
   }, [toast])
 
@@ -57,7 +57,7 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
     setIsLoading(true)
 
     try {
-      const result = category 
+      const result = category
         ? await updateCategory(category.id, formData)
         : await createCategory(formData)
 
@@ -81,16 +81,22 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
     }
   }
 
-  const selectedIconEmoji = availableIcons.find(i => i.key === formData.icon)?.emoji;
 
-  const filteredIcons = availableIcons.filter(icon => 
-    icon.names.some(name => name.toLowerCase().includes(iconSearch.toLowerCase())) ||
-    icon.emoji.includes(iconSearch)
-  );
 
   const groupOptions = [
     { value: '', label: 'Без группы' },
-    ...groups.map(g => ({ value: g.id, label: g.name, color: g.color || undefined }))
+    ...groups.map(g => ({
+      value: g.id,
+      label: g.name,
+      color: g.color || undefined,
+      icon: g.icon ? (
+        <span className="text-lg mr-2">
+          {availableIcons.find(icon => icon.key === g.icon)?.emoji || '📁'}
+        </span>
+      ) : (
+        <span className="text-lg mr-2">📁</span>
+      )
+    }))
   ];
 
   return (
@@ -103,11 +109,12 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
         error={errors.name}
         placeholder="Например: Продукты, Транспорт, Развлечения"
         required
-        autoComplete="new-password"
+        autoComplete="off"
+        name={`category-name-${Date.now()}`}
       />
 
       <div>
-        <SearchableSelect 
+        <SearchableSelect
           options={groupOptions}
           value={formData.category_group_id || ''}
           onChange={(value) => handleChange('category_group_id', value || null)}
@@ -116,28 +123,10 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
       </div>
 
       <div className="flex items-center gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="flex items-center gap-2">
-              <span className="text-xl">{selectedIconEmoji}</span>
-              <span>Иконка</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[320px] p-2">
-            <Input 
-              placeholder="Поиск иконки..."
-              value={iconSearch}
-              onChange={e => setIconSearch(e.target.value)}
-              className="mb-2"
-              autoComplete="new-password"
-            />
-            <div className="grid grid-cols-7 gap-1">
-              {filteredIcons.map(icon => (
-                <button key={icon.key} type="button" onClick={() => handleChange('icon', icon.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${formData.icon === icon.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{icon.emoji}</button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <IconPicker
+          value={formData.icon || 'shopping-bag'}
+          onChange={(value) => handleChange('icon', value)}
+        />
 
         <Popover>
           <PopoverTrigger asChild>

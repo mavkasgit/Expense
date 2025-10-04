@@ -7,9 +7,10 @@ import { Button, Input, Modal, useToast } from '@/components/ui'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { createCategoryGroup, updateCategoryGroup, deleteCategoryGroup, getCategoryGroups, updateGroupOrder } from '@/lib/actions/categories'
 import { SortableGroupItem } from './SortableGroupItem';
+import { IconPicker } from '@/components/ui/IconPicker';
 
 import type { CategoryGroup } from '@/types';
-import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/constants';
+import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/category-constants';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 
@@ -30,9 +31,8 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
-  const [newGroupIcon, setNewGroupIcon] = useState('other')
+  const [newGroupIcon, setNewGroupIcon] = useState('folder')
   const [newGroupColor, setNewGroupColor] = useState('#6b7280')
-  const [iconSearch, setIconSearch] = useState('')
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
   const [groupToDelete, setGroupToDelete] = useState<CategoryGroup | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -85,7 +85,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
       success('Группа создана');
       setIsCreating(false);
       setNewGroupName('');
-      setNewGroupIcon('other');
+      setNewGroupIcon('folder');
       setNewGroupColor('#6b7280');
       loadGroups();
       onSuccess();
@@ -163,10 +163,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
 
   const newGroupIconEmoji = availableIcons.find(i => i.key === newGroupIcon)?.emoji;
 
-  const filteredIcons = availableIcons.filter(icon => 
-    icon.names.some(name => name.toLowerCase().includes(iconSearch.toLowerCase())) ||
-    icon.emoji.includes(iconSearch)
-  );
+
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Управление группами" size="lg">
@@ -191,7 +188,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
               setIsCreating(true);
               setNewGroupName('');
               setNewGroupColor(getRandomColor());
-              setNewGroupIcon('other');
+              setNewGroupIcon('folder');
             }}>Создать группу</Button>
           </div>
         )}
@@ -212,28 +209,10 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
               }}
             />
             <div className="flex items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
-                    <span className="text-xl">{newGroupIconEmoji}</span>
-                    <span>Иконка</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[320px] p-2">
-                  <Input 
-                    placeholder="Поиск иконки..."
-                    value={iconSearch}
-                    onChange={e => setIconSearch(e.target.value)}
-                    className="mb-2"
-                    autoComplete="new-password"
-                  />
-                  <div className="grid grid-cols-7 gap-1">
-                    {filteredIcons.map(icon => (
-                      <button key={icon.key} type="button" onClick={() => setNewGroupIcon(icon.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${newGroupIcon === icon.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{icon.emoji}</button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              <IconPicker
+                value={newGroupIcon}
+                onChange={setNewGroupIcon}
+              />
 
               <Popover>
                 <PopoverTrigger asChild>
