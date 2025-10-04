@@ -5,17 +5,21 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
-import { Modal } from '@/components/ui/Modal'
+
 import { useToast } from '@/hooks/useToast'
-import { 
-  getUnrecognizedKeywords, 
-  assignCategoryToKeyword, 
-  deleteUnrecognizedKeyword, 
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
+import {
+  getUnrecognizedKeywords,
+  assignCategoryToKeyword,
+  deleteUnrecognizedKeyword,
   updateUnrecognizedKeyword,
-  createKeywordWithSynonym,
   addSynonymToKeyword,
-  getAllKeywords
+  getAllKeywords,
+  bulkAssignCategoryToKeywords,
+  bulkAddSynonymsToKeyword,
+  bulkDeleteUnrecognizedKeywords
 } from '@/lib/actions/keywords'
+import { availableIcons } from '@/lib/utils/category-constants'
 import type { Category, UnrecognizedKeyword, CategoryKeyword, KeywordSynonym } from '@/types'
 
 type CategoryKeywordWithDetails = CategoryKeyword & {
@@ -29,43 +33,48 @@ interface UnrecognizedKeywordsSectionProps {
   onToggleVisibility: () => void
 }
 
-export function UnrecognizedKeywordsSection({ 
-  categories, 
-  isVisible, 
-  onToggleVisibility 
+export function UnrecognizedKeywordsSection({
+  categories,
+  isVisible,
+  onToggleVisibility
 }: UnrecognizedKeywordsSectionProps) {
   const [keywords, setKeywords] = useState<UnrecognizedKeyword[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [assigningKeywords, setAssigningKeywords] = useState<Set<string>>(new Set())
   const [editingKeyword, setEditingKeyword] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [selectedKeywords, setSelectedKeywords] = useState<Set<string>>(new Set())
-  const [sortBy, setSortBy] = useState<'frequency' | 'keyword'>('frequency')
-  const [showAssignModal, setShowAssignModal] = useState(false)
-  const [currentKeyword, setCurrentKeyword] = useState<UnrecognizedKeyword | null>(null)
-  const [existingKeywords, setExistingKeywords] = useState<CategoryKeywordWithDetails[]>([])
-  const [assignAction, setAssignAction] = useState<'new' | 'synonym' | 'new-with-synonym'>('new')
-  const [newKeywordName, setNewKeywordName] = useState('')
-  const [selectedCategoryId, setSelectedCategoryId] = useState('')
-  const [selectedExistingKeywordId, setSelectedExistingKeywordId] = useState('')
   const [showAllKeywords, setShowAllKeywords] = useState(false)
+  const [existingKeywords, setExistingKeywords] = useState<CategoryKeywordWithDetails[]>([])
+  const [keywordActions, setKeywordActions] = useState<Record<string, 'new' | 'synonym'>>({})
+  const [keywordCategories, setKeywordCategories] = useState<Record<string, string>>({})
+  const [keywordExistingIds, setKeywordExistingIds] = useState<Record<string, string>>({})
+
+  const [selectedKeywords, setSelectedKeywords] = useState<Set<string>>(new Set())
+  const [bulkNewCategoryId, setBulkNewCategoryId] = useState('')
+  const [bulkSynonymKeywordId, setBulkSynonymKeywordId] = useState('')
+  const [newKeywordText, setNewKeywordText] = useState('')
+  const [newKeywordCategoryId, setNewKeywordCategoryId] = useState('')
+  const [showCreatePanel, setShowCreatePanel] = useState(false)
+  const [isCreatingKeyword, setIsCreatingKeyword] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; keyword: UnrecognizedKeyword | null }>({
+    isOpen: false,
+    keyword: null
+  })
   const { showToast } = useToast()
 
   // Форматируем категории для SearchableSelect
-  const categoryOptions = categories.map(category => ({
-    value: category.id,
-    label: category.name,
-    color: category.color || '#6366f1',
-    icon: category.icon || 'shopping-bag'
-  }))
-
-  // Сортированные ключевые слова
-  const sortedKeywords = [...keywords].sort((a, b) => {
-    if (sortBy === 'frequency') {
-      return (b.frequency || 0) - (a.frequency || 0)
+  const categoryOptions = categories.map(category => {
+    const iconEmoji = availableIcons.find(i => i.key === category.icon)?.emoji || '📦'
+    return {
+      value: category.id,
+      label: category.name,
+      color: category.color || '#6366f1',
+      icon: <span className="mr-2 text-base">{iconEmoji}</span>
     }
-    return a.keyword.localeCompare(b.keyword, 'ru')
   })
+
+  // Ключевые слова отсортированные по частоте (по убыванию)
+  const sortedKeywords = [...keywords].sort((a, b) => (b.frequency || 0) - (a.frequency || 0))
 
   // Ключевые слова для отображения (первые 5 или все)
   const displayedKeywords = showAllKeywords ? sortedKeywords : sortedKeywords.slice(0, 5)
@@ -75,6 +84,7 @@ export function UnrecognizedKeywordsSection({
   useEffect(() => {
     if (isVisible) {
       loadUnrecognizedKeywords()
+      loadExistingKeywords()
     }
   }, [isVisible]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -105,76 +115,316 @@ export function UnrecognizedKeywordsSection({
     }
   }
 
-  const handleOpenAssignModal = (keyword: UnrecognizedKeyword) => {
-    setCurrentKeyword(keyword)
-    setNewKeywordName(keyword.keyword)
-    setAssignAction('new')
-    setSelectedCategoryId('')
-    setSelectedExistingKeywordId('')
-    setShowAssignModal(true)
-    loadExistingKeywords()
+  const getKeywordAction = (keywordId: string): 'new' | 'synonym' => {
+    return keywordActions[keywordId] || 'new'
   }
 
-  const handleAssignKeyword = async () => {
-    if (!currentKeyword || !selectedCategoryId) {
+  const setKeywordAction = (keywordId: string, action: 'new' | 'synonym') => {
+    setKeywordActions(prev => ({ ...prev, [keywordId]: action }))
+  }
+
+  const getKeywordCategory = (keywordId: string): string => {
+    return keywordCategories[keywordId] || ''
+  }
+
+  const setKeywordCategory = (keywordId: string, categoryId: string) => {
+    setKeywordCategories(prev => ({ ...prev, [keywordId]: categoryId }))
+  }
+
+  const getKeywordExistingId = (keywordId: string): string => {
+    return keywordExistingIds[keywordId] || ''
+  }
+
+  const setKeywordExistingId = (keywordId: string, existingId: string) => {
+    setKeywordExistingIds(prev => ({ ...prev, [keywordId]: existingId }))
+  }
+
+
+
+
+
+  const handleKeywordSelect = (keywordId: string, selected: boolean) => {
+    // Сохраняем текущую позицию скролла
+    const scrollPosition = window.scrollY
+
+    setSelectedKeywords(prev => {
+      const newSet = new Set(prev)
+      if (selected) {
+        newSet.add(keywordId)
+      } else {
+        newSet.delete(keywordId)
+      }
+      return newSet
+    })
+
+    // Восстанавливаем позицию скролла после обновления состояния
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollPosition)
+    })
+  }
+
+  const handleSelectAll = () => {
+    // Сохраняем текущую позицию скролла
+    const scrollPosition = window.scrollY
+
+    const displayedIds = displayedKeywords.map(k => k.id)
+    const allDisplayedSelected = displayedIds.every(id => selectedKeywords.has(id))
+
+    if (allDisplayedSelected) {
+      // Убираем выбор с отображаемых
+      setSelectedKeywords(prev => {
+        const newSet = new Set(prev)
+        displayedIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    } else {
+      // Выбираем все отображаемые
+      setSelectedKeywords(prev => {
+        const newSet = new Set(prev)
+        displayedIds.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+
+    // Восстанавливаем позицию скролла после обновления состояния
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollPosition)
+    })
+  }
+
+  const handleBulkAssign = async (action: 'new' | 'synonym', categoryId?: string, existingKeywordId?: string) => {
+    if (selectedKeywords.size === 0) {
+      showToast('Выберите ключевые слова для массового назначения', 'warning')
+      return
+    }
+
+    const selectedKeywordsList = keywords.filter(k => selectedKeywords.has(k.id))
+    const keywordTexts = selectedKeywordsList.map(k => k.keyword)
+    const keywordIds = selectedKeywordsList.map(k => k.id)
+
+    // Показываем индикатор загрузки для всех выбранных
+    setAssigningKeywords(prev => {
+      const newSet = new Set(prev)
+      keywordIds.forEach(id => newSet.add(id))
+      return newSet
+    })
+
+    try {
+      let result
+
+      if (action === 'new') {
+        if (!categoryId) {
+          showToast('Выберите категорию для массового назначения', 'error')
+          return
+        }
+        result = await bulkAssignCategoryToKeywords({
+          keywords: keywordTexts,
+          category_id: categoryId
+        })
+      } else {
+        if (!existingKeywordId) {
+          showToast('Выберите ключевое слово для массового назначения', 'error')
+          return
+        }
+        result = await bulkAddSynonymsToKeyword({
+          keyword_id: existingKeywordId,
+          synonyms: keywordTexts
+        })
+      }
+
+      if (result.success) {
+        // Удаляем все обработанные ключевые слова из списка
+        setKeywords(prev => prev.filter(k => !selectedKeywords.has(k.id)))
+        setSelectedKeywords(new Set())
+        showToast(`Успешно обработано: ${result.count} ключевых слов`, 'success')
+      } else {
+        showToast(result.error || 'Ошибка массового назначения', 'error')
+      }
+    } catch (error) {
+      showToast('Произошла ошибка при массовом назначении', 'error')
+    } finally {
+      // Убираем индикатор загрузки
+      setAssigningKeywords(prev => {
+        const newSet = new Set(prev)
+        keywordIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    }
+  }
+
+  const handleBulkConfirm = async () => {
+    if (selectedKeywords.size === 0) {
+      showToast('Выберите ключевые слова для подтверждения', 'warning')
+      return
+    }
+
+    const selectedList = keywords.filter(k => selectedKeywords.has(k.id))
+    const keywordTexts = selectedList.map(k => k.keyword).join(', ')
+
+    if (!confirm(`Подтвердить назначение для выбранных ключевых слов:\n${keywordTexts}`)) {
+      return
+    }
+
+    let successCount = 0
+    const keywordIds = selectedList.map(k => k.id)
+
+    // Показываем индикатор загрузки для всех выбранных
+    setAssigningKeywords(prev => {
+      const newSet = new Set(prev)
+      keywordIds.forEach(id => newSet.add(id))
+      return newSet
+    })
+
+    try {
+      for (const keyword of selectedList) {
+        const action = getKeywordAction(keyword.id)
+        const categoryId = getKeywordCategory(keyword.id)
+
+        // Проверяем, что все необходимые поля заполнены
+        if (action === 'new' && !categoryId) {
+          showToast(`Для "${keyword.keyword}" не выбрана категория`, 'error')
+          continue
+        }
+
+        if (action === 'synonym') {
+          const existingId = getKeywordExistingId(keyword.id)
+          if (!existingId) {
+            showToast(`Для "${keyword.keyword}" не выбрано существующее ключевое слово`, 'error')
+            continue
+          }
+        }
+
+        // Выполняем назначение
+        try {
+          let result
+
+          if (action === 'new') {
+            result = await assignCategoryToKeyword({
+              keyword: keyword.keyword,
+              category_id: categoryId
+            })
+          } else {
+            const existingId = getKeywordExistingId(keyword.id)
+            result = await addSynonymToKeyword({
+              keyword_id: existingId,
+              synonym: keyword.keyword
+            })
+          }
+
+          if (result.success) {
+            successCount++
+          } else {
+            showToast(`Ошибка назначения "${keyword.keyword}": ${result.error}`, 'error')
+          }
+        } catch (error) {
+          showToast(`Ошибка назначения "${keyword.keyword}"`, 'error')
+        }
+      }
+
+      if (successCount > 0) {
+        // Удаляем успешно обработанные ключевые слова
+        setKeywords(prev => prev.filter(k => !selectedKeywords.has(k.id)))
+        setSelectedKeywords(new Set())
+        showToast(`Успешно подтверждено: ${successCount} ключевых слов`, 'success')
+      }
+    } finally {
+      // Убираем индикатор загрузки
+      setAssigningKeywords(prev => {
+        const newSet = new Set(prev)
+        keywordIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedKeywords.size === 0) {
+      showToast('Выберите ключевые слова для удаления', 'warning')
+      return
+    }
+
+    if (!confirm(`Удалить выбранные ключевые слова (${selectedKeywords.size})?`)) {
+      return
+    }
+
+    const selectedKeywordIds = Array.from(selectedKeywords)
+
+    try {
+      const result = await bulkDeleteUnrecognizedKeywords(selectedKeywordIds)
+
+      if (result.success) {
+        // Удаляем все выбранные ключевые слова из списка
+        setKeywords(prev => prev.filter(k => !selectedKeywords.has(k.id)))
+        setSelectedKeywords(new Set())
+        showToast(`Удалено ключевых слов: ${result.count}`, 'success')
+      } else {
+        showToast(result.error || 'Ошибка массового удаления', 'error')
+      }
+    } catch (error) {
+      showToast('Произошла ошибка при массовом удалении', 'error')
+    }
+  }
+
+  const handleAssignKeyword = async (keyword: UnrecognizedKeyword) => {
+    const action = getKeywordAction(keyword.id)
+    const categoryId = getKeywordCategory(keyword.id)
+
+    // Проверяем категорию только для создания нового ключевого слова
+    if (action === 'new' && !categoryId) {
       showToast('Выберите категорию', 'error')
       return
     }
 
-    setAssigningKeywords(prev => new Set(prev).add(currentKeyword.id))
-    
+    setAssigningKeywords(prev => new Set(prev).add(keyword.id))
+
     try {
       let result
 
-      switch (assignAction) {
-        case 'new':
-          // Создать новое ключевое слово
-          result = await assignCategoryToKeyword({
-            keyword: currentKeyword.keyword,
-            category_id: selectedCategoryId
-          })
-          break
-
-        case 'synonym':
-          // Добавить как синоним к существующему
-          if (!selectedExistingKeywordId) {
-            showToast('Выберите существующее ключевое слово', 'error')
-            return
-          }
-          result = await addSynonymToKeyword({
-            keyword_id: selectedExistingKeywordId,
-            synonym: currentKeyword.keyword
-          })
-          break
-
-        case 'new-with-synonym':
-          // Создать новое ключевое слово и добавить текущее как синоним
-          if (!newKeywordName.trim()) {
-            showToast('Введите название нового ключевого слова', 'error')
-            return
-          }
-          result = await createKeywordWithSynonym({
-            newKeyword: newKeywordName.trim(),
-            synonym: currentKeyword.keyword,
-            category_id: selectedCategoryId
-          })
-          break
-
-        default:
-          showToast('Неизвестное действие', 'error')
+      if (action === 'new') {
+        // Создать новое ключевое слово
+        result = await assignCategoryToKeyword({
+          keyword: keyword.keyword,
+          category_id: categoryId
+        })
+      } else {
+        // Добавить как синоним к существующему
+        const existingId = getKeywordExistingId(keyword.id)
+        if (!existingId) {
+          showToast('Выберите существующее ключевое слово', 'error')
           return
+        }
+        result = await addSynonymToKeyword({
+          keyword_id: existingId,
+          synonym: keyword.keyword
+        })
       }
 
       if (result.success) {
-        const actionText = assignAction === 'new' 
+        const actionText = action === 'new'
           ? 'создано как новое ключевое слово'
-          : assignAction === 'synonym'
-          ? 'добавлено как синоним'
-          : 'создано новое ключевое слово с синонимом'
-        
-        showToast(`"${currentKeyword.keyword}" ${actionText}`, 'success')
-        setKeywords(prev => prev.filter(k => k.id !== currentKeyword.id))
-        setShowAssignModal(false)
+          : 'добавлено как синоним'
+
+        showToast(`"${keyword.keyword}" ${actionText}`, 'success')
+        setKeywords(prev => prev.filter(k => k.id !== keyword.id))
+
+        // Очищаем состояния для этого ключевого слова
+        setKeywordActions(prev => {
+          const newState = { ...prev }
+          delete newState[keyword.id]
+          return newState
+        })
+        setKeywordCategories(prev => {
+          const newState = { ...prev }
+          delete newState[keyword.id]
+          return newState
+        })
+        setKeywordExistingIds(prev => {
+          const newState = { ...prev }
+          delete newState[keyword.id]
+          return newState
+        })
+
+
       } else {
         showToast(result.error || 'Ошибка назначения', 'error')
       }
@@ -183,32 +433,31 @@ export function UnrecognizedKeywordsSection({
     } finally {
       setAssigningKeywords(prev => {
         const newSet = new Set(prev)
-        newSet.delete(currentKeyword.id)
+        newSet.delete(keyword.id)
         return newSet
       })
     }
   }
 
-  const handleDeleteKeyword = async (keyword: UnrecognizedKeyword) => {
-    if (!confirm(`Удалить ключевое слово "${keyword.keyword}"?`)) {
-      return
-    }
+  const handleDeleteKeyword = (keyword: UnrecognizedKeyword) => {
+    setDeleteConfirm({ isOpen: true, keyword })
+  }
+
+  const confirmDeleteKeyword = async () => {
+    if (!deleteConfirm.keyword) return
 
     try {
-      const result = await deleteUnrecognizedKeyword(keyword.id)
+      const result = await deleteUnrecognizedKeyword(deleteConfirm.keyword.id)
       if (result.success) {
         showToast('Ключевое слово удалено', 'success')
-        setKeywords(prev => prev.filter(k => k.id !== keyword.id))
-        setSelectedKeywords(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(keyword.id)
-          return newSet
-        })
+        setKeywords(prev => prev.filter(k => k.id !== deleteConfirm.keyword!.id))
       } else {
         showToast(result.error || 'Ошибка удаления ключевого слова', 'error')
       }
     } catch (error) {
       showToast('Произошла ошибка при удалении', 'error')
+    } finally {
+      setDeleteConfirm({ isOpen: false, keyword: null })
     }
   }
 
@@ -227,7 +476,7 @@ export function UnrecognizedKeywordsSection({
       const result = await updateUnrecognizedKeyword(keywordId, editValue.trim())
       if (result.success) {
         showToast('Ключевое слово обновлено', 'success')
-        setKeywords(prev => prev.map(k => 
+        setKeywords(prev => prev.map(k =>
           k.id === keywordId ? { ...k, keyword: editValue.trim() } : k
         ))
         setEditingKeyword(null)
@@ -245,104 +494,7 @@ export function UnrecognizedKeywordsSection({
     setEditValue('')
   }
 
-  const handleSelectKeyword = (keywordId: string, selected: boolean) => {
-    setSelectedKeywords(prev => {
-      const newSet = new Set(prev)
-      if (selected) {
-        newSet.add(keywordId)
-      } else {
-        newSet.delete(keywordId)
-      }
-      return newSet
-    })
-  }
 
-  const handleSelectAll = () => {
-    const displayedIds = displayedKeywords.map(k => k.id)
-    const allDisplayedSelected = displayedIds.every(id => selectedKeywords.has(id))
-    
-    if (allDisplayedSelected) {
-      // Убираем выбор с отображаемых
-      setSelectedKeywords(prev => {
-        const newSet = new Set(prev)
-        displayedIds.forEach(id => newSet.delete(id))
-        return newSet
-      })
-    } else {
-      // Выбираем все отображаемые
-      setSelectedKeywords(prev => {
-        const newSet = new Set(prev)
-        displayedIds.forEach(id => newSet.add(id))
-        return newSet
-      })
-    }
-  }
-
-  const handleBulkAssignCategory = async (categoryId: string) => {
-    if (selectedKeywords.size === 0) {
-      showToast('Выберите ключевые слова для назначения категории', 'warning')
-      return
-    }
-
-    const selectedKeywordsList = keywords.filter(k => selectedKeywords.has(k.id))
-    
-    for (const keyword of selectedKeywordsList) {
-      setAssigningKeywords(prev => new Set(prev).add(keyword.id))
-      
-      try {
-        const result = await assignCategoryToKeyword({
-          keyword: keyword.keyword,
-          category_id: categoryId
-        })
-
-        if (result.success) {
-          setKeywords(prev => prev.filter(k => k.id !== keyword.id))
-        } else {
-          showToast(`Ошибка назначения "${keyword.keyword}": ${result.error}`, 'error')
-        }
-      } catch (error) {
-        showToast(`Ошибка назначения "${keyword.keyword}"`, 'error')
-      } finally {
-        setAssigningKeywords(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(keyword.id)
-          return newSet
-        })
-      }
-    }
-
-    setSelectedKeywords(new Set())
-    showToast(`Назначено категорий: ${selectedKeywordsList.length}`, 'success')
-  }
-
-  const handleBulkDelete = async () => {
-    if (selectedKeywords.size === 0) {
-      showToast('Выберите ключевые слова для удаления', 'warning')
-      return
-    }
-
-    if (!confirm(`Удалить выбранные ключевые слова (${selectedKeywords.size})?`)) {
-      return
-    }
-
-    const selectedKeywordsList = keywords.filter(k => selectedKeywords.has(k.id))
-    
-    for (const keyword of selectedKeywordsList) {
-      try {
-        const result = await deleteUnrecognizedKeyword(keyword.id)
-        if (result.success) {
-          setKeywords(prev => prev.filter(k => k.id !== keyword.id))
-        } else {
-          showToast(`Ошибка удаления "${keyword.keyword}": ${result.error}`, 'error')
-        }
-      } catch (error) {
-        showToast(`Ошибка удаления "${keyword.keyword}"`, 'error')
-      }
-    }
-
-    setSelectedKeywords(new Set())
-    showToast(`Удалено ключевых слов: ${selectedKeywordsList.length}`, 'success')
-  }
 
   if (keywords.length === 0 && !isLoading) {
     return null // Не показываем секцию если нет неопознанных ключевых слов
@@ -360,13 +512,28 @@ export function UnrecognizedKeywordsSection({
               {keywords.length}
             </span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleVisibility}
-          >
-            {isVisible ? 'Скрыть' : 'Показать'}
-          </Button>
+          <div className="flex items-center space-x-3">
+            {isVisible && (
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showCreatePanel}
+                  onChange={(e) => setShowCreatePanel(e.target.checked)}
+                  className="w-4 h-4 rounded border-0 text-green-600 focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-sm text-green-700">
+                  ➕ Создать новое
+                </span>
+              </label>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleVisibility}
+            >
+              {isVisible ? 'Скрыть' : 'Показать'}
+            </Button>
+          </div>
         </div>
 
         {isVisible && (
@@ -378,81 +545,115 @@ export function UnrecognizedKeywordsSection({
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm text-gray-600">
-                    Назначьте категории этим ключевым словам для улучшения автоматической категоризации расходов.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSortBy(sortBy === 'frequency' ? 'keyword' : 'frequency')}
-                    >
-                      Сортировка: {sortBy === 'frequency' ? 'По частоте' : 'По алфавиту'}
-                    </Button>
-                  </div>
-                </div>
 
-                {selectedKeywords.size > 0 && (
-                  <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-blue-800">
-                        Выбrano: {selectedKeywords.size} ключевых слов
+
+                {/* Панель создания нового ключевого слова */}
+                {showCreatePanel && (
+                  <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-medium text-green-800">
+                        ➕ Добавить новое ключевое слово
                       </span>
-                      <div className="flex gap-2">
-                        <SearchableSelect
-                          options={categoryOptions}
-                          value=""
-                          onChange={(categoryId) => {
-                            if (categoryId) {
-                              handleBulkAssignCategory(categoryId)
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                      <Input
+                        value={newKeywordText}
+                        onChange={(e) => setNewKeywordText(e.target.value)}
+                        placeholder="Введите ключевое слово"
+                        className="text-sm h-8"
+                      />
+                      <SearchableSelect
+                        options={categoryOptions}
+                        value={newKeywordCategoryId}
+                        onChange={(value) => setNewKeywordCategoryId(value || '')}
+                        placeholder="Выберите категорию"
+                        size="sm"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-green-600 hover:text-green-700 h-8"
+                        onClick={async () => {
+                          if (!newKeywordText.trim()) {
+                            showToast('Введите ключевое слово', 'error')
+                            return
+                          }
+                          if (!newKeywordCategoryId) {
+                            showToast('Выберите категорию', 'error')
+                            return
+                          }
+
+                          setIsCreatingKeyword(true)
+                          try {
+                            const result = await assignCategoryToKeyword({
+                              keyword: newKeywordText.trim(),
+                              category_id: newKeywordCategoryId
+                            })
+
+                            if (result.success) {
+                              showToast(`Ключевое слово "${newKeywordText.trim()}" создано`, 'success')
+                              setNewKeywordText('')
+                              setNewKeywordCategoryId('')
+                            } else {
+                              showToast(result.error || 'Ошибка создания ключевого слова', 'error')
                             }
-                          }}
-                          placeholder="Назначить категорию всем"
-                          size="sm"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleBulkDelete}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Удалить выбранные
-                        </Button>
-                      </div>
+                          } catch (error) {
+                            showToast('Произошла ошибка при создании', 'error')
+                          } finally {
+                            setIsCreatingKeyword(false)
+                          }
+                        }}
+                        disabled={!newKeywordText.trim() || !newKeywordCategoryId || isCreatingKeyword}
+                      >
+                        {isCreatingKeyword ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                            <span>Создание...</span>
+                          </div>
+                        ) : (
+                          'Создать ключевое слово'
+                        )}
+                      </Button>
                     </div>
                   </div>
                 )}
-                
+
+                <p className="text-sm text-gray-600 mb-4">
+                  Назначьте категории этим ключевым словам для улучшения автоматической категоризации расходов.
+                </p>
+
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="text-left p-2 w-8">
-                          <input
-                            type="checkbox"
-                            checked={displayedKeywords.length > 0 && displayedKeywords.every(k => selectedKeywords.has(k.id))}
-                            onChange={handleSelectAll}
-                            className="rounded border-gray-300"
-                          />
-                        </th>
-                        <th className="text-left p-2">Ключевое слово</th>
+                        <th className="text-left p-2 w-48">Ключевое слово</th>
                         <th className="text-left p-2 w-20">Частота</th>
-                        <th className="text-left p-2 w-32">Действия</th>
+                        <th className="text-left p-2 w-80">Создать как новое слово</th>
+                        <th className="text-left p-2 w-80">Создать как синоним</th>
+                        <th className="text-left p-2 w-32">
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-center w-8">
+                              <input
+                                type="checkbox"
+                                checked={displayedKeywords.length > 0 && displayedKeywords.every(k => selectedKeywords.has(k.id))}
+                                onChange={handleSelectAll}
+                                className="w-4 h-4 rounded border-0 text-blue-600 focus:ring-0 focus:ring-offset-0"
+                                title="Выбрать все"
+                              />
+                            </div>
+                            <span>Действия</span>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {displayedKeywords.map((keyword) => (
-                        <tr key={keyword.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="p-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedKeywords.has(keyword.id)}
-                              onChange={(e) => handleSelectKeyword(keyword.id, e.target.checked)}
-                              className="rounded border-gray-300"
-                            />
-                          </td>
-                          <td className="p-2">
+                        <tr
+                          key={keyword.id}
+                          className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${selectedKeywords.has(keyword.id) ? 'bg-blue-50 border-blue-200' : ''
+                            }`}
+                        >
+                          <td className="p-2 cursor-text align-top min-h-[60px]">
                             {editingKeyword === keyword.id ? (
                               <div className="flex items-center gap-2">
                                 <Input
@@ -465,7 +666,7 @@ export function UnrecognizedKeywordsSection({
                                       handleCancelEdit()
                                     }
                                   }}
-                                  className="text-sm"
+                                  className="text-sm h-10"
                                   autoFocus
                                 />
                                 <Button
@@ -495,31 +696,117 @@ export function UnrecognizedKeywordsSection({
                               </button>
                             )}
                           </td>
-                          <td className="p-2 text-sm text-gray-600">
+                          <td className="p-2 text-sm text-gray-600 align-top min-h-[60px]">
                             {keyword.frequency}
                           </td>
-                          <td className="p-2">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenAssignModal(keyword)}
-                                disabled={assigningKeywords.has(keyword.id)}
-                                className="text-xs"
-                              >
-                                {assigningKeywords.has(keyword.id) ? 'Назначение...' : 'Назначить'}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteKeyword(keyword)}
-                                className="text-red-400 hover:text-red-600 p-1"
-                                title="Удалить"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </Button>
+                          <td className="p-2 align-top min-h-[60px]">
+                            <div className="space-y-2 h-full flex flex-col justify-start">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  name={`action-${keyword.id}`}
+                                  checked={getKeywordAction(keyword.id) === 'new'}
+                                  onChange={() => setKeywordAction(keyword.id, 'new')}
+                                  className="text-blue-600"
+                                />
+                                <span className="text-xs">Как новое слово</span>
+                              </label>
+                              {getKeywordAction(keyword.id) === 'new' && (
+                                <div className="space-y-1">
+                                  <div className="h-10">
+                                    <SearchableSelect
+                                      options={categoryOptions}
+                                      value={getKeywordCategory(keyword.id)}
+                                      onChange={(value) => setKeywordCategory(keyword.id, value || '')}
+                                      placeholder="Выберите категорию"
+                                      size="sm"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 align-top min-h-[60px]">
+                            <div className="space-y-2 h-full flex flex-col justify-start">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  name={`action-${keyword.id}`}
+                                  checked={getKeywordAction(keyword.id) === 'synonym'}
+                                  onChange={() => setKeywordAction(keyword.id, 'synonym')}
+                                  className="text-blue-600"
+                                />
+                                <span className="text-xs">Как синоним</span>
+                              </label>
+                              {getKeywordAction(keyword.id) === 'synonym' && (
+                                <div className="space-y-1">
+                                  <div className="h-10">
+                                    <SearchableSelect
+                                      options={existingKeywords.map(kw => {
+                                        const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
+                                        return {
+                                          value: kw.id,
+                                          label: `${kw.keyword} (${kw.categories?.name || 'Без категории'})`,
+                                          color: kw.categories?.color || '#6366f1',
+                                          icon: <span className="mr-2 text-base">{iconEmoji}</span>
+                                        }
+                                      })}
+                                      value={getKeywordExistingId(keyword.id)}
+                                      onChange={(value) => setKeywordExistingId(keyword.id, value || '')}
+                                      placeholder="Выберите ключевое слово"
+                                      size="sm"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 align-top min-h-[60px]">
+                            <div className="flex items-center w-full h-full">
+                              <div className="flex items-center justify-center w-8">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedKeywords.has(keyword.id)}
+                                  onChange={(e) => handleKeywordSelect(keyword.id, e.target.checked)}
+                                  className="w-4 h-4 rounded border-0 text-blue-600 focus:ring-0 focus:ring-offset-0"
+                                  title="Выбрать для массовых операций"
+                                />
+                              </div>
+                              <div className="flex items-center justify-center w-8 mx-4">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleAssignKeyword(keyword)}
+                                  disabled={
+                                    assigningKeywords.has(keyword.id) ||
+                                    (getKeywordAction(keyword.id) === 'new' && !getKeywordCategory(keyword.id)) ||
+                                    (getKeywordAction(keyword.id) === 'synonym' && !getKeywordExistingId(keyword.id))
+                                  }
+                                  className="w-8 h-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 disabled:text-gray-400 disabled:hover:bg-transparent"
+                                  title="Подтвердить назначение"
+                                >
+                                  {assigningKeywords.has(keyword.id) ? (
+                                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                                  ) : (
+                                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </Button>
+                              </div>
+                              <div className="flex items-center justify-center w-8">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteKeyword(keyword)}
+                                  className="w-8 h-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  title="Удалить ключевое слово"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </Button>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -535,11 +822,102 @@ export function UnrecognizedKeywordsSection({
                       size="sm"
                       onClick={() => setShowAllKeywords(!showAllKeywords)}
                     >
-                      {showAllKeywords 
-                        ? `Показать только первые 5` 
+                      {showAllKeywords
+                        ? `Показать только первые 5`
                         : `Показать все (${sortedKeywords.length})`
                       }
                     </Button>
+                  </div>
+                )}
+
+                {/* Панель массовых действий */}
+                {selectedKeywords.size > 0 && (
+                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="mb-3">
+                      <span className="text-sm font-medium text-blue-800">
+                        Выбрано: {selectedKeywords.size} ключевых слов
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-blue-800">Создать как новые слова:</label>
+                        <SearchableSelect
+                          options={categoryOptions}
+                          value={bulkNewCategoryId}
+                          onChange={(categoryId) => setBulkNewCategoryId(categoryId || '')}
+                          placeholder="Выберите категорию"
+                          size="sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-blue-800">Добавить как синонимы:</label>
+                        <SearchableSelect
+                          options={existingKeywords.map(kw => {
+                            const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
+                            return {
+                              value: kw.id,
+                              label: `${kw.keyword} (${kw.categories?.name || 'Без категории'})`,
+                              color: kw.categories?.color || '#6366f1',
+                              icon: <span className="mr-2 text-base">{iconEmoji}</span>
+                            }
+                          })}
+                          value={bulkSynonymKeywordId}
+                          onChange={(keywordId) => setBulkSynonymKeywordId(keywordId || '')}
+                          placeholder="Выберите ключевое слово"
+                          size="sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (bulkNewCategoryId) {
+                            handleBulkAssign('new', bulkNewCategoryId)
+                            setBulkNewCategoryId('')
+                          } else {
+                            showToast('Выберите категорию для создания новых слов', 'warning')
+                          }
+                        }}
+                        disabled={!bulkNewCategoryId}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        Создать как новые
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (bulkSynonymKeywordId) {
+                            handleBulkAssign('synonym', undefined, bulkSynonymKeywordId)
+                            setBulkSynonymKeywordId('')
+                          } else {
+                            showToast('Выберите ключевое слово для синонимов', 'warning')
+                          }
+                        }}
+                        disabled={!bulkSynonymKeywordId}
+                        className="text-purple-600 hover:text-purple-700"
+                      >
+                        Добавить как синонимы
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleBulkConfirm}
+                        className="text-green-600 hover:text-green-700"
+                      >
+                        ✓ Подтвердить настройки
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleBulkDelete}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        ✕ Удалить выбранные
+                      </Button>
+                    </div>
                   </div>
                 )}
               </>
@@ -547,111 +925,18 @@ export function UnrecognizedKeywordsSection({
           </>
         )}
 
-        {/* Модальное окно назначения */}
-        <Modal
-          isOpen={showAssignModal}
-          onClose={() => setShowAssignModal(false)}
-          title={`Назначить ключевое слово: "${currentKeyword?.keyword}"`}
-        >
-          <div className="space-y-4">
-            <div className="space-y-3">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  name="assignAction"
-                  value="new"
-                  checked={assignAction === 'new'}
-                  onChange={(e) => setAssignAction(e.target.value as any)}
-                  className="text-blue-600"
-                />
-                <span>Создать новое ключевое слово</span>
-              </label>
-              
-              <label className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  name="assignAction"
-                  value="synonym"
-                  checked={assignAction === 'synonym'}
-                  onChange={(e) => setAssignAction(e.target.value as any)}
-                  className="text-blue-600"
-                />
-                <span>Добавить как синоним к существующему</span>
-              </label>
-              
-              <label className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  name="assignAction"
-                  value="new-with-synonym"
-                  checked={assignAction === 'new-with-synonym'}
-                  onChange={(e) => setAssignAction(e.target.value as any)}
-                  className="text-blue-600"
-                />
-                <span>Создать новое ключевое слово и добавить как синоним</span>
-              </label>
-            </div>
 
-            {assignAction === 'new-with-synonym' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Название нового ключевого слова
-                </label>
-                <Input
-                  value={newKeywordName}
-                  onChange={(e) => setNewKeywordName(e.target.value)}
-                  placeholder="Например: Продукты"
-                />
-              </div>
-            )}
-
-            {assignAction === 'synonym' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Существующее ключевое слово
-                </label>
-                <SearchableSelect
-                  options={existingKeywords.map(kw => ({
-                    value: kw.id,
-                    label: `${kw.keyword} (${kw.categories?.name || 'Без категории'})`,
-                    color: kw.categories?.color || '#6366f1'
-                  }))}
-                  value={selectedExistingKeywordId}
-                  onChange={(value) => setSelectedExistingKeywordId(value || '')}
-                  placeholder="Выберите ключевое слово..."
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Категория
-              </label>
-              <SearchableSelect
-                options={categoryOptions}
-                value={selectedCategoryId}
-                onChange={(value) => setSelectedCategoryId(value || '')}
-                placeholder="Выберите категорию..."
-              />
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowAssignModal(false)}
-              >
-                Отмена
-              </Button>
-              <Button
-                onClick={handleAssignKeyword}
-                disabled={!selectedCategoryId || (assignAction === 'synonym' && !selectedExistingKeywordId)}
-              >
-                Назначить
-              </Button>
-            </div>
-          </div>
-        </Modal>
       </div>
+
+      <ConfirmationModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, keyword: null })}
+        onConfirm={confirmDeleteKeyword}
+        title="Удалить ключевое слово"
+        message={`Вы уверены, что хотите удалить ключевое слово "${deleteConfirm.keyword?.keyword}"?`}
+        confirmText="Удалить"
+        cancelText="Отмена"
+      />
     </Card>
   )
 }

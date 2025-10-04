@@ -7,6 +7,7 @@ interface Option {
   value: string | null
   label: string
   color?: string
+  icon?: React.ReactNode
 }
 
 interface SearchableSelectProps {
@@ -201,10 +202,15 @@ export function SearchableSelect({
                   )}
                   onClick={() => handleSelect(option.value)}
                 >
-                  {option.color && (
-                    <div className="h-3 w-3 flex-shrink-0 rounded-full" style={{ backgroundColor: option.color }} />
-                  )}
-                  <span className="text-gray-900">{option.label}</span>
+                  <div className="flex items-center">
+                    {option.icon && (
+                      <span className="flex-shrink-0">{option.icon}</span>
+                    )}
+                    {option.color && (
+                      <div className="h-3 w-3 flex-shrink-0 rounded-full mr-2" style={{ backgroundColor: option.color }} />
+                    )}
+                    <span className="text-gray-900">{option.label}</span>
+                  </div>
                 </div>
               ))}
               {canToggle && (

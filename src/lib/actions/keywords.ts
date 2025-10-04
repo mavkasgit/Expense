@@ -715,6 +715,164 @@ export async function addSynonymToKeyword(data: {
   }
 }
 
+// Массовое назначение категории ключевым словам
+export async function bulkAssignCategoryToKeywords(data: {
+  keywords: string[]
+  category_id: string
+}) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    // Проверяем категорию
+    const { data: category, error: categoryError } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('id', data.category_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (categoryError || !category) {
+      return { error: 'Категория не найдена' }
+    }
+
+    // Создаем ключевые слова массово
+    const keywordsToInsert = data.keywords.map(keyword => ({
+      user_id: user.id,
+      keyword: keyword.trim(),
+      category_id: data.category_id
+    }))
+
+    const { data: createdKeywords, error: keywordError } = await supabase
+      .from('category_keywords')
+      .insert(keywordsToInsert)
+      .select()
+
+    if (keywordError) {
+      console.error('Ошибка массового создания ключевых слов:', keywordError)
+      return { error: 'Не удалось создать ключевые слова' }
+    }
+
+    // Удаляем из неопознанных массово
+    await supabase
+      .from('unrecognized_keywords')
+      .delete()
+      .in('keyword', data.keywords.map(k => k.trim()))
+      .eq('user_id', user.id)
+
+    // Перекатегоризируем расходы для всех ключевых слов
+    for (const keyword of data.keywords) {
+      await recategorizeExpensesByKeyword(keyword.trim(), data.category_id)
+    }
+
+    revalidatePath('/categories')
+    revalidatePath('/expenses')
+    
+    return { success: true, data: createdKeywords, count: data.keywords.length }
+  } catch (err) {
+    console.error('Ошибка массового назначения ключевых слов:', err)
+    return { error: 'Произошла ошибка при массовом назначении' }
+  }
+}
+
+// Массовое добавление синонимов к ключевому слову
+export async function bulkAddSynonymsToKeyword(data: {
+  keyword_id: string
+  synonyms: string[]
+}) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    // Проверяем, что ключевое слово принадлежит пользователю
+    const { data: keyword, error: keywordError } = await supabase
+      .from('category_keywords')
+      .select('id, category_id')
+      .eq('id', data.keyword_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (keywordError || !keyword) {
+      return { error: 'Ключевое слово не найдено' }
+    }
+
+    // Создаем синонимы массово
+    const synonymsToInsert = data.synonyms.map(synonym => ({
+      keyword_id: data.keyword_id,
+      synonym: synonym.trim(),
+      user_id: user.id
+    }))
+
+    const { data: createdSynonyms, error: synonymError } = await supabase
+      .from('keyword_synonyms')
+      .insert(synonymsToInsert)
+      .select()
+
+    if (synonymError) {
+      console.error('Ошибка массового создания синонимов:', synonymError)
+      return { error: 'Не удалось создать синонимы' }
+    }
+
+    // Удаляем из неопознанных массово
+    await supabase
+      .from('unrecognized_keywords')
+      .delete()
+      .in('keyword', data.synonyms.map(s => s.trim()))
+      .eq('user_id', user.id)
+
+    // Перекатегоризируем расходы для всех синонимов
+    if (keyword.category_id) {
+      for (const synonym of data.synonyms) {
+        await recategorizeExpensesByKeyword(synonym.trim(), keyword.category_id)
+      }
+    }
+
+    revalidatePath('/categories')
+    revalidatePath('/expenses')
+    
+    return { success: true, data: createdSynonyms, count: data.synonyms.length }
+  } catch (err) {
+    console.error('Ошибка массового добавления синонимов:', err)
+    return { error: 'Произошла ошибка при массовом добавлении синонимов' }
+  }
+}
+
+// Массовое удаление неопознанных ключевых слов
+export async function bulkDeleteUnrecognizedKeywords(ids: string[]) {
+  const supabase = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    const { error } = await supabase
+      .from('unrecognized_keywords')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('Ошибка массового удаления неопознанных ключевых слов:', error)
+      return { error: 'Не удалось удалить ключевые слова' }
+    }
+
+    return { success: true, count: ids.length }
+  } catch (err) {
+    console.error('Ошибка массового удаления неопознанных ключевых слов:', err)
+    return { error: 'Произошла ошибка при массовом удалении' }
+  }
+}
+
 // Удаление неопознанного ключевого слова
 export async function deleteUnrecognizedKeyword(id: string) {
   const supabase = await createServerClient()
