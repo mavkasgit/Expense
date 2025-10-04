@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card } from '@/components/ui/Card'
+
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
@@ -501,9 +501,12 @@ export function UnrecognizedKeywordsSection({
   }
 
   return (
-    <Card className="mb-6">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
+    <div className="mb-6 bg-white rounded-lg shadow-sm overflow-hidden border-2 border-orange-200">
+      <div 
+        className="bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
+        onClick={onToggleVisibility}
+      >
+        <div className="px-4 py-2 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <h3 className="text-lg font-semibold text-gray-900">
               🔤 Неопознанные ключевые слова
@@ -514,7 +517,10 @@ export function UnrecognizedKeywordsSection({
           </div>
           <div className="flex items-center space-x-3">
             {isVisible && (
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label 
+                className="flex items-center space-x-2 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <input
                   type="checkbox"
                   checked={showCreatePanel}
@@ -526,19 +532,16 @@ export function UnrecognizedKeywordsSection({
                 </span>
               </label>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onToggleVisibility}
-            >
-              {isVisible ? 'Скрыть' : 'Показать'}
-            </Button>
+            <span className="text-sm text-gray-600">
+              {isVisible ? '▲ Скрыть' : '▼ Показать'}
+            </span>
           </div>
         </div>
+      </div>
 
-        {isVisible && (
-          <>
-            {isLoading ? (
+      {isVisible && (
+        <div className="p-4">
+          {isLoading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                 <p className="text-sm text-gray-600 mt-2">Загрузка...</p>
@@ -922,11 +925,8 @@ export function UnrecognizedKeywordsSection({
                 )}
               </>
             )}
-          </>
-        )}
-
-
-      </div>
+        </div>
+      )}
 
       <ConfirmationModal
         isOpen={deleteConfirm.isOpen}
@@ -937,6 +937,6 @@ export function UnrecognizedKeywordsSection({
         confirmText="Удалить"
         cancelText="Отмена"
       />
-    </Card>
+    </div>
   )
 }

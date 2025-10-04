@@ -27,7 +27,7 @@ export const TimeInput = forwardRef<TimeInputRef, TimeInputProps>(function TimeI
   onError,
   disabled = false,
   className = '',
-  placeholder = 'ЧЧММ',
+  placeholder = 'ЧЧ:ММ',
   title = 'Время'
 }, ref) {
   const [inputValue, setInputValue] = useState('')

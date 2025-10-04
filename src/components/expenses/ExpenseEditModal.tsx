@@ -392,7 +392,7 @@ export function ExpenseEditModal({
           {/* Сумма */}
           <div>
             <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
-              Сумма *
+              Сумма
             </label>
             <Input
               id="amount"
@@ -412,7 +412,7 @@ export function ExpenseEditModal({
           {/* Дата */}
           <div>
             <label htmlFor="expense_date" className="block text-sm font-medium text-gray-700 mb-1">
-              Дата *
+              Дата
             </label>
             <DatePicker
               value={formData.expense_date}
@@ -458,11 +458,7 @@ export function ExpenseEditModal({
               disabled={isPending}
             />
             {errors.description && <ErrorMessage error={errors.description} />}
-            {formData.description && (
-              <div className="text-xs text-gray-500 mt-1">
-                {formData.description.length}/500 символов
-              </div>
-            )}
+
           </div>
 
           {/* Город */}

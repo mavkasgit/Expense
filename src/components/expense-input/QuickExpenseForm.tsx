@@ -342,22 +342,6 @@ export function QuickExpenseForm({
           </div>
         </div>
 
-        {/* Примечание */}
-        <div>
-          <Input
-            type="text"
-            value={formData.notes}
-            onChange={(e) => setFormData(prev => ({
-              ...prev,
-              notes: e.target.value
-            }))}
-            onKeyPress={handleKeyPress}
-            placeholder="Примечание (необязательно)"
-            disabled={isPending}
-            maxLength={1000}
-          />
-        </div>
-
         {/* Город */}
         <div className="grid grid-cols-1 gap-2">
           <CityInput
@@ -376,6 +360,22 @@ export function QuickExpenseForm({
                 : 'Новый город будет сохранён как непознанный'
               : 'Укажите город, чтобы привязать расход к карте'}
           </div>
+        </div>
+
+        {/* Примечание */}
+        <div>
+          <Input
+            type="text"
+            value={formData.notes}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              notes: e.target.value
+            }))}
+            onKeyPress={handleKeyPress}
+            placeholder="Примечание (необязательно)"
+            disabled={isPending}
+            maxLength={1000}
+          />
         </div>
 
         {/* Дата и время */}

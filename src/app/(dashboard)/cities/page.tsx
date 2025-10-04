@@ -61,6 +61,7 @@ export default function CitiesPage() {
   const [mapState, setMapState] = useState<MapState>(MAP_DEFAULT_STATE)
   const mapRef = useRef<unknown>(null)
   const [userEmail, setUserEmail] = useState<string | undefined>()
+  const [isUserLoading, setIsUserLoading] = useState(true)
 
   const currencyFormatter = useMemo(
     () =>
@@ -87,11 +88,18 @@ export default function CitiesPage() {
     [sortedExpenses]
   )
 
+  // Оптимизированная загрузка пользователя
   useEffect(() => {
     const supabase = createClient()
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUserEmail(user?.email)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setUserEmail(user?.email)
+      } catch (error) {
+        console.error('Ошибка загрузки пользователя:', error)
+      } finally {
+        setIsUserLoading(false)
+      }
     }
     void fetchUser()
   }, [])
@@ -283,3 +291,5 @@ export default function CitiesPage() {
     </div>
   )
 }
+
+
