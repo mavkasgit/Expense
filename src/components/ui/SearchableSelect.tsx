@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 interface Option {
   value: string | null
   label: string
-  color?: string
+  color?: string | null
   icon?: React.ReactNode
 }
 
