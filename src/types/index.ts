@@ -204,38 +204,7 @@ export type Database = {
         }
         Relationships: []
       }
-      city_aliases: {
-        Row: {
-          city_id: string | null
-          created_at: string | null
-          id: string
-          name: string
-          user_id: string | null
-        }
-        Insert: {
-          city_id?: string | null
-          created_at?: string | null
-          id?: string
-          name: string
-          user_id?: string | null
-        }
-        Update: {
-          city_id?: string | null
-          created_at?: string | null
-          id?: string
-          name?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "city_aliases_city_id_fkey"
-            columns: ["city_id"]
-            isOneToOne: false
-            referencedRelation: "cities"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+
       city_synonyms: {
         Row: {
           city_id: string
@@ -444,7 +413,6 @@ export type Database = {
           keyword: string
           last_seen: string | null
           source_type: string | null
-          suggested_cyrillic: string | null
           user_id: string | null
         }
         Insert: {
@@ -454,7 +422,6 @@ export type Database = {
           keyword: string
           last_seen?: string | null
           source_type?: string | null
-          suggested_cyrillic?: string | null
           user_id?: string | null
         }
         Update: {
@@ -464,7 +431,6 @@ export type Database = {
           keyword?: string
           last_seen?: string | null
           source_type?: string | null
-          suggested_cyrillic?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -490,7 +456,7 @@ export type Category = Database['public']['Tables']['categories']['Row']
 export type CategoryGroup = Database['public']['Tables']['category_groups']['Row']
 export type Expense = Database['public']['Tables']['expenses']['Row']
 export type City = Database['public']['Tables']['cities']['Row']
-export type CityAlias = Database['public']['Tables']['city_aliases']['Row']
+
 export type CitySynonym = Database['public']['Tables']['city_synonyms']['Row']
 export type CitySynonymWithCity = CitySynonym & {
   city: Pick<City, 'id' | 'name' | 'coordinates' | 'is_favorite'> | null
@@ -518,6 +484,7 @@ export type CategoryKeywordWithSynonyms = CategoryKeyword & {
 export type ExpenseWithCategory = Expense & {
   category: Category | null
   city?: Pick<City, 'id' | 'name' | 'coordinates'> | null
+  bank_statements?: { filename: string } | null
 }
 
 export type CategoryWithKeywords = Category & {

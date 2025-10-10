@@ -151,16 +151,7 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
           throw new Error('Ошибка удаления неопознанных городов при массовом удалении: ' + deleteUnrecognizedCitiesError.message);
         }
 
-        // Delete all city aliases for these cities (assuming city_aliases table exists)
-        const { error: deleteAliasesError } = await supabase
-          .from('city_aliases') // Assuming this table exists
-          .delete()
-          .in('city_id', cityIds)
-          .eq('user_id', user.id);
 
-        if (deleteAliasesError) {
-          throw new Error('Ошибка удаления алиасов городов при массовом удалении: ' + deleteAliasesError.message);
-        }
 
         // Finally, delete the cities themselves
         const { error: deleteCitiesError } = await supabase
@@ -208,7 +199,6 @@ export async function deleteAllUserData() {
       | 'category_groups'
       | 'cities' // Added cities table
       | 'unrecognized_cities' // Added unrecognized_cities table
-      | 'city_aliases' // Added city_aliases table
 
 
     const deleteWithCheck = async (
@@ -234,7 +224,7 @@ export async function deleteAllUserData() {
 
     await deleteWithCheck('city_synonyms', 'синонимов городов')
     await deleteWithCheck('unrecognized_cities', 'неопознанных городов')
-    await deleteWithCheck('city_aliases', 'алиасов городов') // Assuming this table exists
+
     await deleteWithCheck('cities', 'городов', 'города и синонимы') // Added cities table
 
     await deleteWithCheck('categories', 'категорий', 'категории')

@@ -45,19 +45,8 @@ export async function createExpense(data: CreateExpenseData) {
         .ilike('synonym', normalized)
         .maybeSingle()
 
-      if (synonymMatch?.city_id && synonymMatch.city) {
+      if (synonymMatch?.city) {
         return synonymMatch.city as { id: string; name: string }
-      }
-
-      const { data: aliasMatch } = await supabase
-        .from('city_aliases')
-        .select('city_id, city:cities(id, name)')
-        .eq('user_id', user.id)
-        .ilike('name', normalized)
-        .maybeSingle()
-
-      if (aliasMatch?.city) {
-        return aliasMatch.city as { id: string; name: string }
       }
 
       return null
@@ -273,19 +262,8 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
           .ilike('synonym', normalized)
           .maybeSingle()
   
-        if (synonymMatch?.city_id && synonymMatch.city) {
+        if (synonymMatch?.city) {
           return synonymMatch.city as { id: string; name: string }
-        }
-  
-        const { data: aliasMatch } = await supabase
-          .from('city_aliases')
-          .select('city_id, city:cities(id, name)')
-          .eq('user_id', user.id)
-          .ilike('name', normalized)
-          .maybeSingle()
-  
-        if (aliasMatch?.city) {
-          return aliasMatch.city as { id: string; name: string }
         }
   
         return null
@@ -443,7 +421,8 @@ export async function getExpenses(filters?: {
       .select(`
         *,
         category:categories(*),
-        city:cities(id, name, coordinates)
+        city:cities(id, name, coordinates),
+        bank_statements(filename)
       `)
       .eq('user_id', user.id)
 
@@ -541,7 +520,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     }
 
     // Получаем справочную информацию по городам и ключевым словам один раз
-    const [cityQuery, synonymQuery, aliasQuery] = await Promise.all([
+    const [cityQuery, synonymQuery] = await Promise.all([
       supabase
         .from('cities')
         .select('id, name')
@@ -549,20 +528,11 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       supabase
         .from('city_synonyms')
         .select('city_id, synonym')
-        .eq('user_id', user.id),
-      supabase
-        .from('city_aliases')
-        .select('city_id, name')
         .eq('user_id', user.id)
     ])
 
     const cityRecords = cityQuery?.data ?? []
     const synonymRecords = synonymQuery?.data ?? []
-    const aliasRecords = Array.isArray(aliasQuery?.data) ? aliasQuery?.data ?? [] : []
-
-    if (aliasQuery?.error && aliasQuery.error.code !== '42P01') {
-      console.error('Ошибка загрузки алиасов городов:', aliasQuery.error)
-    }
 
     const cityIdSet = new Set<string>()
     const cityNameLookup = new Map<string, { id: string; name: string }>()
@@ -590,13 +560,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       }
     }
 
-    for (const alias of aliasRecords ?? []) {
-      const normalized = alias?.name?.trim().toLocaleLowerCase('ru')
-      if (normalized && alias.city_id) {
-        const city = cityById.get(alias.city_id)
-        synonymLookup.set(normalized, { id: alias.city_id, name: city?.name ?? alias.name ?? '' })
-      }
-    }
+
 
     const rememberUnrecognizedCity = async (name: string, occurrences: number) => {
       const normalized = name.trim()

@@ -563,16 +563,7 @@ export async function deleteCity(data: DeleteCityData) {
       );
     }
 
-    const { error: deleteAliasesError } = await supabase
-      .from('city_aliases')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('city_id', validated.id);
 
-    if (deleteAliasesError) {
-      console.error('Ошибка удаления алиасов города:', deleteAliasesError);
-      return { error: 'Не удалось удалить связанные алиасы города' };
-    }
 
     const { error: deleteSynonymsError } = await supabase
       .from('city_synonyms')
@@ -712,19 +703,7 @@ export async function deleteAllCities(userId: string) {
         return { error: 'Не удалось удалить синонимы городов при массовом удалении' };
       }
 
-      // Delete all city aliases for these cities (assuming city_aliases table exists)
-      // Note: The schema doesn't explicitly show city_aliases, but deleteCity function references it.
-      // If it doesn't exist, this part will need to be removed or adjusted.
-      const { error: deleteAliasesError } = await supabase
-        .from('city_aliases') // Assuming this table exists
-        .delete()
-        .in('city_id', cityIds)
-        .eq('user_id', userId);
 
-      if (deleteAliasesError) {
-        console.error('Ошибка удаления алиасов городов при массовом удалении:', deleteAliasesError);
-        return { error: 'Не удалось удалить алиасы городов при массовом удалении' };
-      }
 
       // Finally, delete the cities themselves
       const { error: deleteCitiesError } = await supabase
