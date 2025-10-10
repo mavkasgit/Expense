@@ -1,42 +1,14 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          request.cookies.set(name, value)
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          supabaseResponse.cookies.set(name, value, options)
-        },
-        remove(name: string, options: any) {
-          request.cookies.delete(name)
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          supabaseResponse.cookies.set(name, '', { ...options, maxAge: 0 })
-        },
-      },
-    }
+  // Проверяем наличие auth cookies от Supabase
+  const allCookies = request.cookies.getAll()
+  const hasAuthCookie = allCookies.some(cookie => 
+    cookie.name.startsWith('sb-') && cookie.name.includes('auth-token')
   )
-
-  // Refreshing the auth token
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+  
+  console.log('🍪 Auth cookie found:', hasAuthCookie)
+  
   const protectedPrefixes = [
     '/dashboard',
     '/expenses',
@@ -46,38 +18,29 @@ export async function middleware(request: NextRequest) {
     '/keywords',
   ]
 
-  const isProtectedRoute = protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix));
+  const isProtectedRoute = protectedPrefixes.some(prefix => 
+    request.nextUrl.pathname.startsWith(prefix)
+  )
 
-  // if (isProtectedRoute && !user) {
-  //   // Automatically sign in as test user
-  //   const { error } = await supabase.auth.signInWithPassword({
-  //     email: 'mavkaaa2@gmail.com',
-  //     password: '123456',
-  //   });
+  // Если это защищенный маршрут и нет токенов аутентификации
+  if (isProtectedRoute && !hasAuthCookie) {
+    console.log(`🔒 Redirecting ${request.nextUrl.pathname} -> /login (no auth)`)
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
 
-  //   if (error) {
-  //     console.error('Automatic sign-in failed:', error.message);
-  //     // If sign-in fails, redirect to the login page with an error
-  //     const url = request.nextUrl.clone();
-  //     url.pathname = '/login';
-  //     url.searchParams.set('error', 'Automatic sign-in failed. Please log in manually.');
-  //     return NextResponse.redirect(url);
-  //   }
+  // Перенаправляем аутентифицированных пользователей с страниц входа
+  if ((request.nextUrl.pathname.startsWith('/login') || 
+       request.nextUrl.pathname.startsWith('/signup')) && 
+       hasAuthCookie) {
+    console.log(`✅ Redirecting ${request.nextUrl.pathname} -> /dashboard (authenticated)`)
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
 
-  //   // After a successful sign-in, the cookie should be set.
-  //   // Reload the page to let middleware run again with the new session.
-  //   return NextResponse.redirect(request.url);
-  // }
-
-  // // Redirect authenticated users away from auth pages
-  // if ((request.nextUrl.pathname.startsWith('/login') || 
-  //      request.nextUrl.pathname.startsWith('/signup')) && user) {
-  //   const url = request.nextUrl.clone()
-  //   url.pathname = '/dashboard'
-  //   return NextResponse.redirect(url)
-  // }
-
-  return supabaseResponse
+  return NextResponse.next()
 }
 
 export const config = {
