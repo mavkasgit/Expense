@@ -30,18 +30,26 @@ export function UserMenu({ userEmail }: UserMenuProps) {
     }
   }, [])
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     setError(null)
     setIsSigningOut(true)
 
-    // Fire and forget the server action
-    signOut().catch(err => console.error('Background sign out error:', err));
+    try {
+      const result = await signOut()
+      
+      if (result?.error) {
+        setError(result.error)
+        setIsSigningOut(false)
+        return
+      }
 
-    // Redirect after a short delay to ensure the signOut call is sent
-    // and the overlay has had a chance to render.
-    setTimeout(() => {
-      window.location.href = '/login';
-    }, 100);
+      // Успешный выход - перенаправляем на страницу логина
+      window.location.href = '/login'
+    } catch (err) {
+      console.error('Sign out error:', err)
+      setError('Произошла ошибка при выходе из системы')
+      setIsSigningOut(false)
+    }
   }
 
   return (
@@ -116,6 +124,17 @@ export function UserMenu({ userEmail }: UserMenuProps) {
                 </svg>
                 <span>Настройки</span>
               </button>
+              
+              <a
+                href="/backup"
+                className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                onClick={() => setIsOpen(false)}
+              >
+                <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12"></path>
+                </svg>
+                <span>Резервное копирование</span>
+              </a>
             </div>
 
             <div className="p-2 border-t border-gray-100">
