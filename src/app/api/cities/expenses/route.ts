@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+
+export const runtime = 'nodejs'
 import { hasGeoPoint, isVirtualCoordinates, parseCityCoordinates, normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
 import { DEFAULT_MARKER_PRESET } from '@/lib/constants/cityMarkers'
 

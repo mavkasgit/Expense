@@ -2,6 +2,9 @@ import { createServerClient as createSupabaseServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Database } from '@/types'
 
+// Принудительно используем Node.js runtime для Supabase
+export const runtime = 'nodejs'
+
 export async function createServerClient() {
   const cookieStore = await cookies()
 
