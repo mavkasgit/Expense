@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
 import { createSafeSupabaseClient } from '@/lib/supabase/safe-operations'
-import { dbInsert, dbUpdate } from '@/lib/supabase/db'
+// Используем безопасный клиент вместо db helpers
 import { expenseSchema, updateExpenseSchema } from '@/lib/validations/expenses'
 import { categorizeExpense } from '@/lib/actions/keywords'
 import type { CreateExpenseData, ExpenseWithCategory } from '@/types'

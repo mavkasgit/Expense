@@ -1,7 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import { dbInsert } from '../supabase/db'
+// Используем безопасный клиент вместо db helpers
 
 export async function createBankStatement(data: {
   id: string;
@@ -16,9 +16,11 @@ export async function createBankStatement(data: {
     return { error: 'User not authenticated' }
   }
 
-  const { error } = await dbInsert(supabase, 'bank_statements', {
-    id: data.id,
-    filename: data.filename,
+  const { error } = await (supabase as any)
+    .from('bank_statements')
+    .insert({
+      id: data.id,
+      filename: data.filename,
     file_type: data.file_type,
     total_records: data.total_records,
     user_id: user.id,

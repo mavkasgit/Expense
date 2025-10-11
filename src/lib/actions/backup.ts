@@ -2,7 +2,7 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { dbInsert } from '../supabase/db'
+// Используем безопасный клиент вместо db helpers
 
 // Типы для резервной копии
 interface BackupData {
@@ -377,7 +377,10 @@ export async function restoreUserData(backupData: BackupData): Promise<RestoreRe
         return newRecord;
       });
 
-      const { data: newRecords, error } = await dbInsert(supabase, tableName, recordsToInsert).select()
+      const { data: newRecords, error } = await (supabase as any)
+        .from(tableName)
+        .insert(recordsToInsert)
+        .select()
       if (error) {
         console.error(`❌ Ошибка восстановления ${tableName}:`, error);
         throw new Error(`Не удалось восстановить данные для таблицы ${tableName}. Ошибка: ${error.message}`);
