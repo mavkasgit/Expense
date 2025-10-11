@@ -1,6 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
+import { createSafeSupabaseClient } from '@/lib/supabase/safe-operations'
 import { revalidatePath } from 'next/cache'
 
 // --- User Settings ---
@@ -49,8 +50,9 @@ interface SelectiveDeleteOptions {
 
 // Абсолютно новое действие для выборочного удаления
 export async function selectiveDelete(options: SelectiveDeleteOptions) {
-  const supabase = await createServerClient()
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  const supabaseClient = await createServerClient()
+  const supabase = createSafeSupabaseClient(supabaseClient)
+  const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
 
   if (userError || !user) {
     return { error: 'Пользователь не авторизован' }
@@ -63,15 +65,15 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
     // Сначала удаляем расходы, потом ключевые слова, потом категории, потом группы.
 
     if (options.deleteExpenses) {
-      const { error } = await supabase.from('expenses').delete().eq('user_id', user.id)
+      const { error } = await supabaseClient.from('expenses').delete().eq('user_id', user.id)
       if (error) throw new Error('Ошибка при удалении расходов: ' + error.message)
       deletedItems.push('расходы')
     }
 
     if (options.deleteKeywords) {
-      await supabase.from('keyword_synonyms').delete().eq('user_id', user.id)
-      await supabase.from('unrecognized_keywords').delete().eq('user_id', user.id)
-      const { error } = await supabase.from('category_keywords').delete().eq('user_id', user.id)
+      await supabaseClient.from('keyword_synonyms').delete().eq('user_id', user.id)
+      await supabaseClient.from('unrecognized_keywords').delete().eq('user_id', user.id)
+      const { error } = await supabaseClient.from('category_keywords').delete().eq('user_id', user.id)
       if (error) throw new Error('Ошибка при удалении ключевых слов: ' + error.message)
       deletedItems.push('ключевые слова и синонимы')
     }
@@ -85,7 +87,7 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
           .eq('user_id', user.id)
         if (updateError) throw new Error('Ошибка при отвязке категорий от расходов: ' + updateError.message)
       }
-      const { error } = await supabase.from('categories').delete().eq('user_id', user.id)
+      const { error } = await supabaseClient.from('categories').delete().eq('user_id', user.id)
       if (error) throw new Error('Ошибка при удалении категорий: ' + error.message)
       deletedItems.push('категории')
     }
@@ -99,7 +101,7 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
           .eq('user_id', user.id)
         if (updateError) throw new Error('Ошибка при отвязке групп от категорий: ' + updateError.message)
       }
-      const { error } = await supabase.from('category_groups').delete().eq('user_id', user.id)
+      const { error } = await supabaseClient.from('category_groups').delete().eq('user_id', user.id)
       if (error) throw new Error('Ошибка при удалении групп: ' + error.message)
       deletedItems.push('группы')
     }
@@ -107,7 +109,7 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
     // New logic for deleting cities and synonyms
     if (options.deleteCitiesAndSynonyms) {
       // First, get all city IDs for the user
-      const { data: cities, error: citiesError } = await supabase
+      const { data: cities, error: citiesError } = await supabaseClient
         .from('cities')
         .select('id')
         .eq('user_id', user.id);
@@ -116,7 +118,7 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
         throw new Error('Ошибка при получении городов для массового удаления: ' + citiesError.message);
       }
 
-      const cityIds = cities?.map(city => city.id) || [];
+      const cityIds = cities?.map(city => (city as any).id) || [];
 
       if (cityIds.length > 0) {
         // Set city_id to null for all expenses linked to these cities

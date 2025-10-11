@@ -176,13 +176,13 @@ export function ExpenseForm({
 
         const result = await createExpense(expenseData)
 
-        if (result.error) {
-          showToast(result.error, 'error')
+        if ('error' in result) {
+          showToast(result.error || 'Произошла ошибка', 'error')
           return
         }
 
         // Показываем результат категоризации
-        if (result.data?.auto_categorized) {
+        if (result.data.auto_categorized) {
           showToast('Расход добавлен и автоматически категоризирован', 'success')
         } else {
           showToast('Расход добавлен в неопознанные. Вы можете назначить категорию позже.', 'info')

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
+import { dbInsert, dbUpdate, dbUpsert } from '@/lib/supabase/db'
 import { categorySchema, updateCategorySchema } from '@/lib/validations/categories'
 import type { CreateCategoryData } from '@/types'
 
@@ -20,17 +21,13 @@ export async function createCategory(data: CreateCategoryData) {
     const validatedData = categorySchema.parse(data)
 
     // Создаем категорию
-    const { data: category, error } = await supabase
-      .from('categories')
-      .insert({
-        user_id: user.id,
-        name: validatedData.name,
-        color: validatedData.color || '#6366f1',
-        icon: validatedData.icon || 'shopping-bag',
-        category_group_id: validatedData.category_group_id
-      })
-      .select()
-      .single()
+    const { data: category, error } = await dbInsert(supabase, 'categories', {
+      user_id: user.id,
+      name: validatedData.name,
+      color: validatedData.color || '#6366f1',
+      icon: validatedData.icon || 'shopping-bag',
+      category_group_id: validatedData.category_group_id
+    }).select().single()
 
     if (error) {
       console.error('Ошибка создания категории:', error)
@@ -60,19 +57,13 @@ export async function updateCategory(id: string, data: Partial<CreateCategoryDat
     const validatedData = updateCategorySchema.parse(data)
 
     // Обновляем категорию
-    const { data: category, error } = await supabase
-      .from('categories')
-      .update({
-        name: validatedData.name,
-        color: validatedData.color,
-        icon: validatedData.icon,
-        category_group_id: validatedData.category_group_id,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .eq('user_id', user.id) // Проверяем, что категория принадлежит пользователю
-      .select()
-      .single()
+    const { data: category, error } = await dbUpdate(supabase, 'categories', {
+      name: validatedData.name,
+      color: validatedData.color,
+      icon: validatedData.icon,
+      category_group_id: validatedData.category_group_id,
+      updated_at: new Date().toISOString()
+    }).eq('id', id).eq('user_id', user.id).select().single()
 
     if (error) {
       console.error('Ошибка обновления категории:', error)
@@ -197,12 +188,10 @@ export async function ensureStandardGroups() {
       sort_order: group.sort_order
     }))
 
-    const { data, error } = await supabase
-      .from('category_groups')
-      .upsert(groupsToInsert, { 
-        onConflict: 'user_id,name',
-        ignoreDuplicates: false
-      })
+    const { data, error } = await dbUpsert(supabase, 'category_groups', groupsToInsert, { 
+      onConflict: 'user_id,name',
+      ignoreDuplicates: false
+    })
       .select()
 
     if (error) {
@@ -293,7 +282,7 @@ export async function getGroupExpenseSummary() {
       return { error: 'Не удалось рассчитать сводку' };
     }
 
-    const summary = data.reduce((acc, expense) => {
+    const summary = (data as any[]).reduce((acc, expense) => {
       const groupId = (expense.categories as any)?.category_group_id;
       if (groupId) {
         acc[groupId] = (acc[groupId] || 0) + expense.amount;
@@ -381,12 +370,10 @@ export async function moveCategoryToGroup(categoryId: string, newGroupId: string
     }
 
     // Обновляем группу категории
-    const { data: category, error } = await supabase
-      .from('categories')
-      .update({
-        category_group_id: newGroupId,
-        updated_at: new Date().toISOString()
-      })
+    const { data: category, error } = await dbUpdate(supabase, 'categories', {
+      category_group_id: newGroupId,
+      updated_at: new Date().toISOString()
+    })
       .eq('id', categoryId)
       .eq('user_id', user.id)
       .select()
@@ -414,9 +401,7 @@ export async function updateGroupOrder(order: { id: string; sort_order: number }
     }
 
     const updates = order.map(item => 
-      supabase
-        .from('category_groups')
-        .update({ sort_order: item.sort_order, updated_at: new Date().toISOString() })
+      dbUpdate(supabase, 'category_groups', { sort_order: item.sort_order, updated_at: new Date().toISOString() })
         .eq('id', item.id)
         .eq('user_id', user.id)
     );
@@ -446,9 +431,7 @@ export async function updateCategoryOrderInGroup(order: { id: string; order: num
     }
 
     const updates = order.map(item =>
-      supabase
-        .from('categories')
-        .update({ sort_order: item.order, updated_at: new Date().toISOString() })
+      dbUpdate(supabase, 'categories', { sort_order: item.order, updated_at: new Date().toISOString() })
         .eq('id', item.id)
         .eq('user_id', user.id)
     );
@@ -520,18 +503,16 @@ export async function createCategoryGroup(data: { name: string; icon?: string; c
       .limit(1)
       .single()
 
-    const nextSortOrder = (maxOrderGroup?.sort_order || 0) + 1
+    const nextSortOrder = ((maxOrderGroup as any)?.sort_order || 0) + 1
 
     // Создаем новую группу
-    const { data: group, error } = await supabase
-      .from('category_groups')
-      .insert({
-        user_id: user.id,
-        name: data.name.trim(),
-        icon: data.icon || 'other',
-        color: data.color || '#6366f1',
-        sort_order: nextSortOrder
-      })
+    const { data: group, error } = await dbInsert(supabase, 'category_groups', {
+      user_id: user.id,
+      name: data.name.trim(),
+      icon: data.icon || 'other',
+      color: data.color || '#6366f1',
+      sort_order: nextSortOrder
+    })
       .select()
       .single()
 
@@ -563,14 +544,12 @@ export async function updateCategoryGroup(groupId: string, data: { name: string;
     }
 
     // Обновляем группу
-    const { data: updatedGroup, error: updateError } = await supabase
-      .from('category_groups')
-      .update({
-        name: data.name.trim(),
-        icon: data.icon,
-        color: data.color,
-        updated_at: new Date().toISOString()
-      })
+    const { data: updatedGroup, error: updateError } = await dbUpdate(supabase, 'category_groups', {
+      name: data.name.trim(),
+      icon: data.icon,
+      color: data.color,
+      updated_at: new Date().toISOString()
+    })
       .eq('id', groupId)
       .eq('user_id', user.id)
       .select()

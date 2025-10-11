@@ -99,7 +99,7 @@ export async function attachUnrecognizedCity(data: { unrecognizedCityId: string;
 
     const synonymResult = await createCitySynonym({
       cityId: validated.cityId,
-      synonym: unrecognized.name,
+      synonym: (unrecognized as any).name,
     })
 
     if (synonymResult.error) {

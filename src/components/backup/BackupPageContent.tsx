@@ -8,26 +8,7 @@ import {
   getUserDataStats,
 } from '@/lib/actions/backup'
 import { useToast } from '@/hooks/useToast'
-
-// Define interfaces right in the file for clarity
-interface BackupData {
-  metadata: { [key: string]: any };
-  [key: string]: any;
-}
-
-interface DataStats {
-  expenses: number;
-  categories: number;
-  categoryGroups: number;
-  categoryKeywords: number;
-  keywordSynonyms: number;
-  cities: number;
-  citySynonyms: number;
-  unrecognizedCities: number;
-  unrecognizedKeywords: number;
-  bankStatements: number;
-  totalRecords: number;
-}
+import type { BackupData, DataStats } from '@/types/backup'
 
 const keyTranslations: { [key: string]: string } = {
   expenses: 'Расходы',

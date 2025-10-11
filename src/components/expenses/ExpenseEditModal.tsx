@@ -342,8 +342,8 @@ export function ExpenseEditModal({
 
         const result = await updateExpense(expense.id, updateData)
 
-        if (result.error) {
-          showToast(result.error, 'error')
+        if ('error' in result) {
+          showToast(result.error || 'Произошла ошибка', 'error')
           return
         }
 

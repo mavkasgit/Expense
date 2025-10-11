@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
+import { createSafeSupabaseClient } from '@/lib/supabase/safe-operations';
 import {
   keywordSynonymSchema,
   deleteKeywordSynonymSchema,
@@ -80,16 +81,16 @@ async function rememberUnrecognizedCity(
       .ilike('name', normalized)
       .maybeSingle();
 
-    if (existing?.id) {
-      await client
+    if ((existing as any)?.id) {
+      await (client as any)
         .from('unrecognized_cities')
         .update({
-          frequency: (existing.frequency ?? 0) + occurrences,
+          frequency: ((existing as any).frequency ?? 0) + occurrences,
           last_seen: timestamp
         })
-        .eq('id', existing.id);
+        .eq('id', (existing as any).id);
     } else {
-      await client
+      await (client as any)
         .from('unrecognized_cities')
         .insert({
           user_id: userId,
@@ -153,10 +154,11 @@ async function geocodeCityCoordinates(cityName: string): Promise<Coordinates | n
 }
 
 export async function createKeywordSynonym(data: CreateKeywordSynonymData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' };
     }
@@ -190,17 +192,17 @@ export async function createKeywordSynonym(data: CreateKeywordSynonymData) {
 }
 
 export async function deleteKeywordSynonym(data: DeleteKeywordSynonymData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' };
     }
 
     const validated = deleteKeywordSynonymSchema.parse(data);
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('keyword_synonyms')
       .delete()
       .eq('id', validated.id as any)
@@ -220,15 +222,15 @@ export async function deleteKeywordSynonym(data: DeleteKeywordSynonymData) {
 }
 
 export async function getCitySynonyms() {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' };
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('city_synonyms')
       .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates, is_favorite)')
       .eq('user_id', user.id);
@@ -256,10 +258,11 @@ export async function getCitySynonyms() {
 }
 
 export async function createCitySynonym(data: CreateCitySynonymData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' };
     }
@@ -271,7 +274,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
     let cityId = validated.cityId ?? null;
 
     if (cityId) {
-      const { data: existingCity, error: cityError } = await supabase
+      const { data: existingCity, error: cityError } = await supabaseClient
         .from('cities')
         .select('id, name, coordinates, is_favorite')
         .eq('id', cityId)
@@ -290,7 +293,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
         return { error: 'Укажите название города' };
       }
 
-      const { data: existingCity } = await supabase
+      const { data: existingCity } = await supabaseClient
         .from('cities')
         .select('id')
         .eq('user_id', user.id)
@@ -393,10 +396,11 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
 }
 
 export async function deleteCitySynonym(data: DeleteCitySynonymData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' };
     }
@@ -408,7 +412,7 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
       return { error: 'Некорректный идентификатор записи синонима' };
     }
 
-    const { data: synonymRecord, error: synonymLoadError } = await supabase
+    const { data: synonymRecord, error: synonymLoadError } = await supabaseClient
       .from('city_synonyms')
       .select('id, city_id, synonym, city:cities(name)')
       .eq('id', recordId)
@@ -430,14 +434,14 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
       return { error: 'Не удалось удалить синоним города' };
     }
 
-    const trimmedSynonym = synonymRecord.synonym.trim();
+    const trimmedSynonym = (synonymRecord as any).synonym.trim();
 
     if (trimmedSynonym) {
-      const { data: affectedExpenses, error: loadExpensesError } = await supabase
+      const { data: affectedExpenses, error: loadExpensesError } = await supabaseClient
         .from('expenses')
         .select('raw_city_input')
         .eq('user_id', user.id)
-        .eq('city_id', synonymRecord.city_id)
+        .eq('city_id', (synonymRecord as any).city_id)
         .filter('raw_city_input', 'ilike', trimmedSynonym);
 
       if (loadExpensesError) {
@@ -447,14 +451,14 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
 
       if (affectedExpenses && affectedExpenses.length > 0) {
         const now = new Date().toISOString();
-        const fallbackName = trimmedSynonym || (synonymRecord.city?.name?.trim() ?? '');
+        const fallbackName = trimmedSynonym || ((synonymRecord as any).city?.name?.trim() ?? '');
         const aggregated = aggregateUnrecognizedCityNames(affectedExpenses, fallbackName);
 
         const { error: updateExpensesError } = await supabase
           .from('expenses')
           .update({ city_id: null, updated_at: now })
           .eq('user_id', user.id)
-          .eq('city_id', synonymRecord.city_id)
+          .eq('city_id', (synonymRecord as any).city_id)
           .filter('raw_city_input', 'ilike', trimmedSynonym);
 
         if (updateExpensesError) {
@@ -465,7 +469,7 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
         await Promise.all(
           aggregated.map((entry) =>
             rememberUnrecognizedCity(
-              supabase,
+              supabaseClient,
               user.id,
               entry.name,
               entry.count,
@@ -487,7 +491,8 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
 }
 
 export async function deleteCity(data: DeleteCityData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -521,8 +526,8 @@ export async function deleteCity(data: DeleteCityData) {
 
     if (linkedExpenses && linkedExpenses.length > 0) {
       const now = new Date().toISOString();
-      const cityName = existingCity.name?.trim() ?? '';
-      const aggregated = aggregateUnrecognizedCityNames(linkedExpenses, cityName);
+      const cityName = (existingCity as any).name?.trim() ?? '';
+      const aggregated = aggregateUnrecognizedCityNames(linkedExpenses as any, cityName);
 
       if (cityName) {
         const { error: normalizeRawInputError } = await supabase
@@ -552,7 +557,7 @@ export async function deleteCity(data: DeleteCityData) {
       await Promise.all(
         aggregated.map((entry) =>
           rememberUnrecognizedCity(
-            supabase,
+            supabaseClient,
             user.id,
             entry.name,
             entry.count,
@@ -597,7 +602,8 @@ export async function deleteCity(data: DeleteCityData) {
 }
 
 export async function updateCityName(data: UpdateCityData) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -620,7 +626,7 @@ export async function updateCityName(data: UpdateCityData) {
       return { error: 'Город не найден' };
     }
 
-    const oldCityName = originalCity.name;
+    const oldCityName = (originalCity as any).name;
 
     // Update the city name
     const { error: updateError } = await supabase
@@ -662,7 +668,8 @@ export async function updateCityName(data: UpdateCityData) {
 }
 
 export async function deleteAllCities(userId: string) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
+  const supabase = createSafeSupabaseClient(supabaseClient);
 
   try {
     // First, get all city IDs for the user
@@ -676,7 +683,7 @@ export async function deleteAllCities(userId: string) {
       return { error: 'Не удалось получить города для удаления' };
     }
 
-    const cityIds = cities?.map(city => city.id) || [];
+    const cityIds = cities?.map(city => (city as any).id) || [];
 
     if (cityIds.length > 0) {
       // Set city_id to null for all expenses linked to these cities
@@ -728,10 +735,10 @@ export async function deleteAllCities(userId: string) {
 }
 
 export async function deleteAllCitySynonyms(userId: string) {
-  const supabase = await createServerClient();
+  const supabaseClient = await createServerClient();
 
   try {
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('city_synonyms')
       .delete()
       .eq('user_id', userId);

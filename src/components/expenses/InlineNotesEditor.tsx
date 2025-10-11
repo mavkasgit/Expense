@@ -55,13 +55,8 @@ export function InlineNotesEditor({ expense, onUpdate }: InlineNotesEditorProps)
           notes: notes || undefined
         })
 
-        if (result.error) {
-          showToast(result.error, 'error')
-          return
-        }
-
-        if (!result.data) {
-          showToast('Не удалось обновить примечание', 'error')
+        if ('error' in result) {
+          showToast(result.error || 'Произошла ошибка', 'error')
           return
         }
 

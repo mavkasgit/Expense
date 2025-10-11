@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
+import { dbUpdate } from '@/lib/supabase/db';
 import {
   updateCityCoordinatesSchema,
   updateCityFavoriteSchema,
@@ -48,14 +49,10 @@ export async function updateCityCoordinates(data: UpdateCityCoordinatesData) {
 
     const validated = updateCityCoordinatesSchema.parse(data);
 
-    const { error } = await supabase
-      .from('cities')
-      .update({
-        coordinates: validated.coordinates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', validated.id)
-      .eq('user_id', user.id);
+    const { error } = await dbUpdate(supabase, 'cities', {
+      coordinates: validated.coordinates,
+      updated_at: new Date().toISOString(),
+    }).eq('id', validated.id).eq('user_id', user.id);
 
     if (error) {
       console.error('Ошибка обновления координат города:', error);
@@ -81,14 +78,10 @@ export async function toggleCityFavorite(data: UpdateCityFavoriteData) {
 
     const validated = updateCityFavoriteSchema.parse(data);
 
-    const { error } = await supabase
-      .from('cities')
-      .update({
-        is_favorite: validated.isFavorite,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', validated.id)
-      .eq('user_id', user.id);
+    const { error } = await dbUpdate(supabase, 'cities', {
+      is_favorite: validated.isFavorite,
+      updated_at: new Date().toISOString(),
+    }).eq('id', validated.id).eq('user_id', user.id);
 
     if (error) {
       console.error('Ошибка обновления статуса избранного города:', error);

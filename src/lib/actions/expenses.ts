@@ -2,17 +2,20 @@
 
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
+import { createSafeSupabaseClient } from '@/lib/supabase/safe-operations'
+import { dbInsert, dbUpdate } from '@/lib/supabase/db'
 import { expenseSchema, updateExpenseSchema } from '@/lib/validations/expenses'
 import { categorizeExpense } from '@/lib/actions/keywords'
-import type { CreateExpenseData } from '@/types'
+import type { CreateExpenseData, ExpenseWithCategory } from '@/types'
 import type { UpdateExpenseData } from '@/lib/validations/expenses'
 
-export async function createExpense(data: CreateExpenseData) {
-  const supabase = await createServerClient()
+export async function createExpense(data: CreateExpenseData): Promise<{ success: true; data: ExpenseWithCategory } | { error: string }> {
+  const supabaseClient = await createServerClient()
+  const supabase = createSafeSupabaseClient(supabaseClient)
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
@@ -27,26 +30,26 @@ export async function createExpense(data: CreateExpenseData) {
         return null
       }
 
-      const { data: directCity } = await supabase
+      const { data: directCity } = await supabaseClient
         .from('cities')
         .select('id, name')
         .eq('user_id', user.id)
         .ilike('name', normalized)
         .maybeSingle()
 
-      if (directCity?.id) {
+      if ((directCity as any)?.id) {
         return directCity
       }
 
-      const { data: synonymMatch } = await supabase
+      const { data: synonymMatch } = await supabaseClient
         .from('city_synonyms')
         .select('city_id, city:cities(id, name)')
         .eq('user_id', user.id)
         .ilike('synonym', normalized)
         .maybeSingle()
 
-      if (synonymMatch?.city) {
-        return synonymMatch.city as { id: string; name: string }
+      if ((synonymMatch as any)?.city) {
+        return (synonymMatch as any).city as { id: string; name: string }
       }
 
       return null
@@ -59,7 +62,7 @@ export async function createExpense(data: CreateExpenseData) {
       }
 
       try {
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseClient
           .from('unrecognized_cities')
           .select('id, frequency')
           .eq('user_id', user.id)
@@ -68,14 +71,14 @@ export async function createExpense(data: CreateExpenseData) {
 
         const now = new Date().toISOString()
 
-        if (existing?.id) {
+        if ((existing as any)?.id) {
           await supabase
             .from('unrecognized_cities')
             .update({
-              frequency: (existing.frequency ?? 0) + 1,
+              frequency: ((existing as any).frequency ?? 0) + 1,
               last_seen: now
             })
-            .eq('id', existing.id)
+            .eq('id', (existing as any).id)
         } else {
           await supabase
             .from('unrecognized_cities')
@@ -96,22 +99,22 @@ export async function createExpense(data: CreateExpenseData) {
     let resolvedCityId: string | null = null
 
     if (validatedData.city_id) {
-      const { data: existingCity } = await supabase
+      const { data: existingCity } = await supabaseClient
         .from('cities')
         .select('id')
         .eq('id', validatedData.city_id)
         .eq('user_id', user.id)
         .maybeSingle()
 
-      if (existingCity?.id) {
-        resolvedCityId = existingCity.id
+      if ((existingCity as any)?.id) {
+        resolvedCityId = (existingCity as any).id
       }
     }
 
     if (!resolvedCityId && trimmedCityInput) {
       const matchedCity = await resolveCityByInput(trimmedCityInput)
-      if (matchedCity?.id) {
-        resolvedCityId = matchedCity.id
+      if ((matchedCity as any)?.id) {
+        resolvedCityId = (matchedCity as any).id
       } else {
         await rememberUnrecognizedCity(trimmedCityInput)
       }
@@ -175,12 +178,13 @@ export async function createExpense(data: CreateExpenseData) {
   }
 }
 
-export async function updateExpense(id: string, data: UpdateExpenseData) {
-  const supabase = await createServerClient()
+export async function updateExpense(id: string, data: UpdateExpenseData): Promise<{ success: true; data: ExpenseWithCategory } | { error: string }> {
+  const supabaseClient = await createServerClient()
+  const supabase = createSafeSupabaseClient(supabaseClient)
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
@@ -190,7 +194,7 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
     const validatedData = updateExpenseSchema.parse(data)
 
     // Получаем текущий расход для проверки прав доступа
-    const { data: currentExpense, error: fetchError } = await supabase
+    const { data: currentExpense, error: fetchError } = await supabaseClient
       .from('expenses')
       .select('*')
       .eq('id', id)
@@ -207,7 +211,7 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
       updated_at: new Date().toISOString()
     }
 
-    if (validatedData.description !== undefined && validatedData.description !== currentExpense.description) {
+    if (validatedData.description !== undefined && validatedData.description !== (currentExpense as any).description) {
       if (validatedData.description && !validatedData.category_id) {
         const categorizationResult = await categorizeExpense(validatedData.description)
         if (categorizationResult.category_id) {
@@ -244,26 +248,26 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
           return null
         }
   
-        const { data: directCity } = await supabase
+        const { data: directCity } = await supabaseClient
           .from('cities')
           .select('id, name')
           .eq('user_id', user.id)
           .ilike('name', normalized)
           .maybeSingle()
   
-        if (directCity?.id) {
+        if ((directCity as any)?.id) {
           return directCity
         }
   
-        const { data: synonymMatch } = await supabase
+        const { data: synonymMatch } = await supabaseClient
           .from('city_synonyms')
           .select('city_id, city:cities(id, name)')
           .eq('user_id', user.id)
           .ilike('synonym', normalized)
           .maybeSingle()
   
-        if (synonymMatch?.city) {
-          return synonymMatch.city as { id: string; name: string }
+        if ((synonymMatch as any)?.city) {
+          return (synonymMatch as any).city as { id: string; name: string }
         }
   
         return null
@@ -276,7 +280,7 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
         }
   
         try {
-          const { data: existing } = await supabase
+          const { data: existing } = await supabaseClient
             .from('unrecognized_cities')
             .select('id, frequency')
             .eq('user_id', user.id)
@@ -285,14 +289,14 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
   
           const now = new Date().toISOString()
   
-          if (existing?.id) {
+          if ((existing as any)?.id) {
             await supabase
               .from('unrecognized_cities')
               .update({
-                frequency: (existing.frequency ?? 0) + 1,
+                frequency: ((existing as any).frequency ?? 0) + 1,
                 last_seen: now
               })
-              .eq('id', existing.id)
+              .eq('id', (existing as any).id)
           } else {
             await supabase
               .from('unrecognized_cities')
@@ -313,22 +317,22 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
       let resolvedCityId: string | null = null
 
       if (validatedData.city_id) {
-        const { data: existingCity } = await supabase
+        const { data: existingCity } = await supabaseClient
           .from('cities')
           .select('id')
           .eq('id', validatedData.city_id)
           .eq('user_id', user.id)
           .maybeSingle()
 
-        if (existingCity?.id) {
-          resolvedCityId = existingCity.id
+        if ((existingCity as any)?.id) {
+          resolvedCityId = (existingCity as any).id
         }
       }
 
       if (!resolvedCityId && trimmedCityInput) {
         const matchedCity = await resolveCityByInput(trimmedCityInput)
-        if (matchedCity?.id) {
-          resolvedCityId = matchedCity.id
+        if ((matchedCity as any)?.id) {
+          resolvedCityId = (matchedCity as any).id
         } else {
           await rememberUnrecognizedCity(trimmedCityInput)
         }
@@ -367,18 +371,18 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
 }
 
 export async function deleteExpense(id: string) {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
     // Удаляем расход
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('expenses')
       .delete()
       .eq('id', id)
@@ -406,17 +410,17 @@ export async function getExpenses(filters?: {
   limit?: number
   offset?: number
 }) {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    let query = supabase
+    let query = supabaseClient
       .from('expenses')
       .select(`
         *,
@@ -471,17 +475,17 @@ export async function getExpenses(filters?: {
 }
 
 export async function getExpenseById(id: string) {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    const { data: expense, error } = await supabase
+    const { data: expense, error } = await supabaseClient
       .from('expenses')
       .select(`
         *,
@@ -505,11 +509,12 @@ export async function getExpenseById(id: string) {
 }
 
 export async function createBulkExpenses(expenses: CreateExpenseData[]) {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
+  const supabase = createSafeSupabaseClient(supabaseClient)
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
@@ -521,11 +526,11 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
 
     // Получаем справочную информацию по городам и ключевым словам один раз
     const [cityQuery, synonymQuery] = await Promise.all([
-      supabase
+      supabaseClient
         .from('cities')
         .select('id, name')
         .eq('user_id', user.id),
-      supabase
+      supabaseClient
         .from('city_synonyms')
         .select('city_id, synonym')
         .eq('user_id', user.id)
@@ -539,24 +544,24 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     const cityById = new Map<string, { id: string; name: string }>()
 
     for (const city of cityRecords ?? []) {
-      if (!city?.id) {
+      if (!(city as any)?.id) {
         continue
       }
-      cityIdSet.add(city.id)
-      const normalized = city.name?.trim().toLocaleLowerCase('ru')
+      cityIdSet.add((city as any).id)
+      const normalized = (city as any).name?.trim().toLocaleLowerCase('ru')
       if (normalized) {
-        cityNameLookup.set(normalized, { id: city.id, name: city.name })
+        cityNameLookup.set(normalized, { id: (city as any).id, name: (city as any).name })
       }
-      cityById.set(city.id, { id: city.id, name: city.name ?? '' })
+      cityById.set((city as any).id, { id: (city as any).id, name: (city as any).name ?? '' })
     }
 
     const synonymLookup = new Map<string, { id: string; name: string }>()
 
     for (const record of synonymRecords ?? []) {
-      const normalized = record?.synonym?.trim().toLocaleLowerCase('ru')
-      if (normalized && record.city_id) {
-        const city = cityById.get(record.city_id)
-        synonymLookup.set(normalized, { id: record.city_id, name: city?.name ?? record.synonym ?? '' })
+      const normalized = (record as any)?.synonym?.trim().toLocaleLowerCase('ru')
+      if (normalized && (record as any).city_id) {
+        const city = cityById.get((record as any).city_id)
+        synonymLookup.set(normalized, { id: (record as any).city_id, name: city?.name ?? (record as any).synonym ?? '' })
       }
     }
 
@@ -569,7 +574,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       }
 
       try {
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseClient
           .from('unrecognized_cities')
           .select('id, frequency')
           .eq('user_id', user.id)
@@ -578,14 +583,14 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
 
         const timestamp = new Date().toISOString()
 
-        if (existing?.id) {
+        if ((existing as any)?.id) {
           await supabase
             .from('unrecognized_cities')
             .update({
-              frequency: (existing.frequency ?? 0) + occurrences,
+              frequency: ((existing as any).frequency ?? 0) + occurrences,
               last_seen: timestamp
             })
-            .eq('id', existing.id)
+            .eq('id', (existing as any).id)
         } else {
           await supabase
             .from('unrecognized_cities')
@@ -603,7 +608,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     }
 
     // ОПТИМИЗАЦИЯ: Получаем все ключевые слова один раз
-    const { data: keywords } = await supabase
+    const { data: keywords } = await supabaseClient
       .from('category_keywords')
       .select(`
         id,
@@ -629,22 +634,22 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       >
 
       for (const keyword of keywordList) {
-        const base = keyword.keyword?.toLowerCase()
+        const base = (keyword as any).keyword?.toLowerCase()
         if (base && descriptionLower.includes(base)) {
           return {
-            category_id: keyword.category_id,
-            matched_keywords: [keyword.keyword],
+            category_id: (keyword as any).category_id,
+            matched_keywords: [(keyword as any).keyword],
             auto_categorized: true
           }
         }
 
-        const synonyms = keyword.keyword_synonyms || []
+        const synonyms = (keyword as any).keyword_synonyms || []
         for (const synonym of synonyms) {
           const normalized = synonym.synonym?.toLowerCase()
           if (normalized && descriptionLower.includes(normalized)) {
             return {
-              category_id: keyword.category_id,
-              matched_keywords: [`${keyword.keyword} (${synonym.synonym})`],
+              category_id: (keyword as any).category_id,
+              matched_keywords: [`${(keyword as any).keyword} (${synonym.synonym})`],
               auto_categorized: true
             }
           }
@@ -770,7 +775,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     // Подсчитываем статистику
     const successCount = createdExpenses?.length || 0
     const failedCount = errors.length
-    const uncategorizedCount = createdExpenses?.filter(e => e.status === 'uncategorized').length || 0
+    const uncategorizedCount = createdExpenses?.filter((e: any) => e.status === 'uncategorized').length || 0
 
     revalidatePath('/expenses')
     revalidatePath('/dashboard')
@@ -796,17 +801,17 @@ export async function getExpenseStats(filters?: {
   date_from?: string
   date_to?: string
 }) {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    let query = supabase
+    let query = supabaseClient
       .from('expenses')
       .select(`
         amount,
@@ -833,15 +838,15 @@ export async function getExpenseStats(filters?: {
     }
 
     // Вычисляем статистику
-    const totalAmount = expenses?.reduce((sum, expense) => sum + expense.amount, 0) || 0
+    const totalAmount = expenses?.reduce((sum, expense) => sum + (expense as any).amount, 0) || 0
     const totalCount = expenses?.length || 0
-    const categorizedCount = expenses?.filter(e => e.status === 'categorized').length || 0
-    const uncategorizedCount = expenses?.filter(e => e.status === 'uncategorized').length || 0
+    const categorizedCount = expenses?.filter(e => (e as any).status === 'categorized').length || 0
+    const uncategorizedCount = expenses?.filter(e => (e as any).status === 'uncategorized').length || 0
 
     // Группируем по категориям
     const categoryStats = expenses?.reduce((acc, expense) => {
-      if (expense.category && typeof expense.category === 'object') {
-        const category = expense.category as any
+      if ((expense as any).category && typeof (expense as any).category === 'object') {
+        const category = (expense as any).category as any
         const categoryName = category.name || 'Без названия'
         const categoryColor = category.color || '#6366f1'
         if (!acc[categoryName]) {
@@ -852,7 +857,7 @@ export async function getExpenseStats(filters?: {
             count: 0
           }
         }
-        acc[categoryName].amount += expense.amount
+        acc[categoryName].amount += (expense as any).amount
         acc[categoryName].count += 1
       }
       return acc
@@ -875,18 +880,18 @@ export async function getExpenseStats(filters?: {
 }
 
 export async function deleteAllExpenses() {
-  const supabase = await createServerClient()
+  const supabaseClient = await createServerClient()
 
   try {
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
     // Удаляем все расходы пользователя
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('expenses')
       .delete()
       .eq('user_id', user.id)

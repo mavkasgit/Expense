@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 
     const summaryMap = new Map<string, CityExpenseSummary>()
 
-    for (const item of data ?? []) {
+    for (const item of (data as any[]) ?? []) {
       const cityId = item.city_id as string | null
       const city = item.city as { id: string; name: string; coordinates: unknown } | null
 
