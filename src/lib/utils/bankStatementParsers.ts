@@ -841,3 +841,65 @@ export function deduplicateTransactions(
     }
   })
 }
+
+const HEADER_KEYWORDS = [
+  'amount', 'сумм', 'sum', 'debet', 'credit', 'дата', 'date', 'опис', 'description',
+  'city', 'город', 'time', 'время', 'note', 'примеч'
+];
+
+function normalizeRow(row: string[] = []): string[] {
+  return row.map(cell => (cell ?? '').trim());
+}
+
+function removeEmptyRows(rows: string[][], preserveFirstRow = false): string[][] {
+  return rows.filter((row, index) => {
+    if (preserveFirstRow && index === 0) {
+      return true;
+    }
+    return row.some(cell => cell && cell.trim().length > 0);
+  });
+}
+
+function detectHeaderRow(headerRow: string[], firstDataRow?: string[]): boolean {
+  if (!headerRow || headerRow.length === 0) {
+    return false;
+  }
+  const normalizedHeader = headerRow.map(cell => cell.trim().toLowerCase());
+  const headerHasKeywords = normalizedHeader.some(cell =>
+    HEADER_KEYWORDS.some(keyword => cell.includes(keyword))
+  );
+  if (headerHasKeywords) {
+    return true;
+  }
+  const headerHasDigits = headerRow.some(cell => /\d/.test(cell));
+  const dataHasDigits = firstDataRow ? firstDataRow.some(cell => /\d/.test(cell)) : false;
+  return !headerHasDigits && dataHasDigits;
+}
+
+export function prepareParsedDataset(parsed: ParsedBankData): { rows: string[][]; hasHeader: boolean } {
+  const headerRow = normalizeRow(parsed.headers || []);
+  const dataRows = (parsed.rows || []).map(normalizeRow);
+  const firstDataRow = dataRows[0];
+
+  const headerHasContent = headerRow.some(cell => cell.length > 0);
+  const hasHeader = headerHasContent && detectHeaderRow(headerRow, firstDataRow);
+
+  if (hasHeader) {
+    return {
+      rows: removeEmptyRows([headerRow, ...dataRows], true),
+      hasHeader: true
+    };
+  }
+
+  if (headerHasContent) {
+    return {
+      rows: removeEmptyRows([headerRow, ...dataRows]),
+      hasHeader: false
+    };
+  }
+
+  return {
+    rows: removeEmptyRows(dataRows),
+    hasHeader: false
+  };
+}

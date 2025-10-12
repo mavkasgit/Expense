@@ -25,11 +25,27 @@ export default async function MainPage() {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           {/* Быстрый ввод расхода */}
-          <div className="lg:col-span-1">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Быстрый ввод
-            </h2>
-            <QuickExpenseForm />
+          <div className="lg:col-span-1 space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Быстрый ввод
+              </h2>
+              <QuickExpenseForm />
+            </div>
+            <div>
+              <Link
+                href="/bulk-import"
+                className="group bg-white rounded-lg shadow-md p-4 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-orange-50 hover:to-orange-100 flex items-center w-full"
+              >
+                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-orange-200 transition-colors">
+                  <span className="text-2xl">📦</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 group-hover:text-orange-800 transition-colors">Массовый ввод</h2>
+                  <p className="text-sm text-gray-600 group-hover:text-orange-700 transition-colors">Загрузка из файла или банковских выписок</p>
+                </div>
+              </Link>
+            </div>
           </div>
 
           {/* Статистика */}
@@ -73,50 +89,6 @@ export default async function MainPage() {
               </Card>
             )}
           </div>
-        </div>
-        
-        {/* Основные разделы */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <Link
-            href="/expenses"
-            className="group bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-green-50 hover:to-emerald-100 hover:scale-105"
-          >
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-green-200 transition-colors">
-                <span className="text-2xl">💰</span>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-green-800 transition-colors">Расходы</h2>
-            </div>
-            <p className="text-gray-600 group-hover:text-green-700 transition-colors">Просмотр и управление расходами</p>
-          </Link>
-          
-          
-          
-          <Link
-            href="/expenses/bulk"
-            className="group bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-orange-50 hover:to-orange-100 hover:scale-105"
-          >
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-orange-200 transition-colors">
-                <span className="text-2xl">📦</span>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-orange-800 transition-colors">Массовый ввод</h2>
-            </div>
-            <p className="text-gray-600 group-hover:text-orange-700 transition-colors">Загрузка расходов из файла</p>
-          </Link>
-          
-          <Link
-            href="/categories"
-            className="group bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-indigo-50 hover:to-purple-100 hover:scale-105"
-          >
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-indigo-200 transition-colors">
-                <span className="text-2xl">📂</span>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-indigo-800 transition-colors">Категории</h2>
-            </div>
-            <p className="text-gray-600 group-hover:text-indigo-700 transition-colors">Настройка категорий расходов</p>
-          </Link>
         </div>
 
       </div>

@@ -76,7 +76,7 @@ export function ExpensesPageContent({
               Добавить первый расход
             </Button>
           </Link>
-          <Link href="/expenses/bulk">
+          <Link href="/bulk-import">
             <Button variant="outline" className="w-full">
               Массовый ввод расходов
             </Button>
@@ -130,7 +130,7 @@ export function ExpensesPageContent({
           <Link href="/dashboard">
             <Button>Добавить расход</Button>
           </Link>
-          <Link href="/expenses/bulk">
+          <Link href="/bulk-import">
             <Button variant="outline">Массовый ввод</Button>
           </Link>
         </div>

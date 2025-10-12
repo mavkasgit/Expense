@@ -13,7 +13,7 @@ import { applyPreset } from '@/lib/actions/presets'
 import { normalizeKeywords } from '@/lib/utils'
 
 import { GroupsManager } from './GroupsManager'
-import { PresetPicker } from './PresetPicker'
+import { PresetSelectorForEmptyState } from './PresetSelectorForEmptyState';
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { GroupsModal } from './GroupsModal'
@@ -366,13 +366,7 @@ export function CategoriesManager({
   }, [groups, filteredKeywords, searchQuery]);
 
   if (!hasData) {
-    return (
-      <div className="text-center py-12 bg-white rounded-lg shadow-sm">
-        <div className="flex justify-center">
-          <PresetPicker onSuccess={handleApplyPreset} />
-        </div>
-      </div>
-    );
+    return <PresetSelectorForEmptyState onSuccess={handleApplyPreset} />;
   }
 
   return (
