@@ -1,14 +1,41 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  // Проверяем наличие auth cookies от Supabase
-  const allCookies = request.cookies.getAll()
-  const hasAuthCookie = allCookies.some(cookie => 
-    cookie.name.startsWith('sb-') && cookie.name.includes('auth-token')
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options })
+          response = NextResponse.next({
+            request: { headers: request.headers },
+          })
+          response.cookies.set({ name, value, ...options })
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: '', ...options })
+          response = NextResponse.next({
+            request: { headers: request.headers },
+          })
+          response.cookies.set({ name, value: '', ...options })
+        },
+      },
+    }
   )
-  
-  console.log('🍪 Auth cookie found:', hasAuthCookie)
-  
+
+  const { data: { user } } = await supabase.auth.getUser()
+
   const protectedPrefixes = [
     '/dashboard',
     '/expenses',
@@ -16,31 +43,32 @@ export async function middleware(request: NextRequest) {
     '/analytics',
     '/cities',
     '/keywords',
+    '/tools',
+    '/backup',
   ]
 
-  const isProtectedRoute = protectedPrefixes.some(prefix => 
+  const authRoutes = ['/login', '/signup', '/forgot-password', '/auth/reset-password']
+
+  const isProtectedRoute = protectedPrefixes.some(prefix =>
+    request.nextUrl.pathname.startsWith(prefix)
+  )
+  const isAuthRoute = authRoutes.some(prefix =>
     request.nextUrl.pathname.startsWith(prefix)
   )
 
-  // Если это защищенный маршрут и нет токенов аутентификации
-  if (isProtectedRoute && !hasAuthCookie) {
-    console.log(`🔒 Redirecting ${request.nextUrl.pathname} -> /login (no auth)`)
+  if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Перенаправляем аутентифицированных пользователей с страниц входа
-  if ((request.nextUrl.pathname.startsWith('/login') || 
-       request.nextUrl.pathname.startsWith('/signup')) && 
-       hasAuthCookie) {
-    console.log(`✅ Redirecting ${request.nextUrl.pathname} -> /dashboard (authenticated)`)
+  if (user && isAuthRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
-  return NextResponse.next()
+  return response
 }
 
 export const config = {
@@ -54,6 +82,6 @@ export const config = {
      * - auth/callback (OAuth callback)
      * - auth/confirm (email confirmation)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|auth/callback|auth/confirm).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|auth/callback|auth/confirm|auth/callback-simple).*)',
   ],
 }

@@ -2,7 +2,7 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-// Используем безопасный клиент вместо db helpers
+import type { Database } from '@/types';
 
 // Типы для резервной копии
 interface BackupData {
@@ -335,7 +335,8 @@ export async function restoreUserData(backupData: BackupData): Promise<RestoreRe
     console.log('=== НАЧАЛО ТРАНЗАКЦИИ ВОССТАНОВЛЕНИЯ ===');
 
     // 1. Очистка старых данных
-    const tablesToDelete = ['expenses', 'keyword_synonyms', 'city_synonyms', 'category_keywords', 'unrecognized_cities', 'unrecognized_keywords', 'categories', 'cities', 'category_groups', 'bank_statements'];
+    type TableName = keyof Database['public']['Tables'];
+    const tablesToDelete: TableName[] = ['expenses', 'keyword_synonyms', 'city_synonyms', 'category_keywords', 'unrecognized_cities', 'unrecognized_keywords', 'categories', 'cities', 'category_groups', 'bank_statements'];
     for (const table of tablesToDelete) {
       const { error: deleteError } = await supabase.from(table).delete().eq('user_id', user.id);
       if (deleteError) {
