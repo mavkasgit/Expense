@@ -990,64 +990,17 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     setIsFileLoading(true)
     try {
       const fileExtension = file.name.split('.').pop()?.toLowerCase()
+      const content = await file.text()
 
       // Сохраняем информацию о файле
       setFileName(file.name)
-      setFileContent(await file.text())
+      setFileContent(content)
       setSelectedTableMeta(null)
       setAvailableTables([])
 
-      if (fileExtension === 'pdf') {
-        const formData = new FormData();
-        formData.append('file', file);
-
+      // Для HTML файлов показываем выбор таблицы
+      if (fileExtension === 'html' || fileExtension === 'htm') {
         try {
-          const response = await fetch('/api/parse-pdf', {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'PDF parsing failed');
-          }
-
-          const { text } = await response.json();
-          
-          const parsed = parseCSV(text);
-          const prepared = prepareParsedDataset(parsed);
-          const dataset = prepared.rows;
-
-          if (dataset.length === 0) {
-            showToast('В PDF не найдено данных для импорта', 'error');
-            return;
-          }
-          
-          const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset;
-          if (dataRows.length === 0) {
-            showToast('В PDF найдены только заголовки', 'warning');
-            return;
-          }
-
-          if (dataRows[0].length > 1) {
-            setPastedData(dataset);
-            setHasHeaderRow(prepared.hasHeader);
-            setIsEditingColumnMapping(false);
-            setIsColumnMappingOpen(true);
-            showToast(`Загружено ${dataRows.length} строк из PDF`, 'success');
-          } else {
-            appendSingleColumnExpenses(dataset, prepared.hasHeader, 'PDF');
-            setHasHeaderRow(false);
-          }
-
-        } catch (error) {
-          showToast(error instanceof Error ? error.message : 'Ошибка обработки PDF', 'error');
-        } finally {
-          setIsFileLoading(false);
-        }
-      } else if (fileExtension === 'html' || fileExtension === 'htm') {
-        try {
-          const content = await file.text()
           const analysis = analyzeHTML(content)
 
           if (analysis.tables.length === 0) {
@@ -1225,32 +1178,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     setShowTableSelection(true);
   }, [fileContent, showToast]);
 
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  const handleDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setIsDragOver(false);
-    const files = event.dataTransfer.files;
-    if (files && files.length > 0) {
-      const syntheticEvent = {
-        target: {
-          files: files
-        }
-      } as unknown as React.ChangeEvent<HTMLInputElement>;
-      handleFileUpload(syntheticEvent);
-    }
-  }, [handleFileUpload]);
-
   return (
     <div className="space-y-6">
       <Card className="p-6">
@@ -1417,11 +1344,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
         {expenses.length === 0 ? (
           <div
-            className={`border-2 border-dashed border-gray-300 rounded-lg p-12 text-center transition-colors ${isDragOver ? 'bg-blue-50 border-blue-400' : ''}`}
+            className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center"
             onPaste={handlePaste}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
             tabIndex={0}
           >
             <div className="text-gray-500">
