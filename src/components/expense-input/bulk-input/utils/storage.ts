@@ -19,11 +19,13 @@ export function loadSavedColumnMapping(): ColumnMapping[] {
 export function saveColumnMapping(mapping: ColumnMapping[]): void {
   try {
     const sanitized = sanitizeColumnMapping(mapping);
-    if (sanitized.length === 0) {
+    const activeMappings = sanitized.filter(m => m.targetFields && m.targetFields.length > 0);
+
+    if (activeMappings.length === 0) {
       localStorage.removeItem(COLUMN_MAPPING_STORAGE_KEY);
       return;
     }
-    localStorage.setItem(COLUMN_MAPPING_STORAGE_KEY, JSON.stringify(sanitized));
+    localStorage.setItem(COLUMN_MAPPING_STORAGE_KEY, JSON.stringify(activeMappings));
   } catch (error) {
     console.warn('Ошибка сохранения схемы столбцов:', error);
   }

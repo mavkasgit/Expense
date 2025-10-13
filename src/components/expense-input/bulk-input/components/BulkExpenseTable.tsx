@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import { TimeInput, TimeInputRef } from '@/components/ui/TimeInput'
 import type { Category } from '@/types'
@@ -209,21 +208,9 @@ export function BulkExpenseTable({
   resolveCityByInput
 }: BulkExpenseTableProps) {
   const [editingCell, setEditingCell] = useState<string | null>(null)
-
-  // Опции для селекта категорий
-  const categoryOptions = [
-    { value: '', label: 'Автоопределение' },
-    ...categories.map(category => ({
-      value: category.id,
-      label: category.name,
-      color: category.color || undefined
-    }))
-  ]
   const timeInputRefs = useRef<Record<string, TimeInputRef | null>>({})
+  const categoryMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
 
-
-
-  // Обработка изменения значения в ячейке
   const handleCellChange = useCallback((
     tempId: string,
     field: keyof BulkExpenseRowData,
@@ -232,7 +219,6 @@ export function BulkExpenseTable({
     onUpdateRow(tempId, field, value)
   }, [onUpdateRow])
 
-  // Обработка нажатия Enter для перехода к следующей ячейке
   const handleKeyDown = useCallback((
     event: React.KeyboardEvent,
     tempId: string,
@@ -245,7 +231,6 @@ export function BulkExpenseTable({
       const fields: (keyof BulkExpenseRowData)[] = ['amount', 'description', 'city', 'expense_date', 'expense_time', 'notes']
       const currentFieldIndex = fields.indexOf(field)
 
-      // Переход к следующему полю или следующей строке
       if (currentFieldIndex < fields.length - 1) {
         const nextField = fields[currentFieldIndex + 1]
         setEditingCell(`${tempId}-${nextField}`)
@@ -256,12 +241,10 @@ export function BulkExpenseTable({
     }
   }, [expenses])
 
-  // Получение ошибки для ячейки
   const getCellError = useCallback((tempId: string, field: string) => {
     return validationErrors[`${tempId}-${field}`]
   }, [validationErrors])
 
-  // Форматирование суммы для отображения
   const formatAmount = useCallback((amount: number) => {
     return amount > 0 ? amount.toString() : ''
   }, [])
@@ -308,6 +291,7 @@ export function BulkExpenseTable({
           <tbody>
             {expenses.map((expense, index) => {
               const tempId = expense.tempId || index.toString()
+              const category = expense.category_id ? categoryMap.get(expense.category_id) : null;
 
               return (
                 <tr key={tempId} className="hover:bg-gray-50">
@@ -440,12 +424,14 @@ export function BulkExpenseTable({
 
                   {/* Категория */}
                   <td className="border border-gray-300 px-1 py-1">
-                    <SearchableSelect
-                      options={categoryOptions}
-                      value={expense.category_id || ''}
-                      onChange={(value) => handleCellChange(tempId, 'category_id', value)}
-                      placeholder="Выберите категорию"
-                      className="text-sm"
+                    <Input
+                      readOnly
+                      value={category ? category.name : 'Не определена'}
+                      className={cn(
+                        'text-sm pointer-events-none',
+                        !category && 'text-gray-500'
+                      )}
+                      leftIcon={category ? <span className="h-2 w-2 rounded-full" style={{ backgroundColor: category.color || '#ccc' }} /> : undefined}
                     />
                   </td>
 
@@ -485,16 +471,6 @@ export function BulkExpenseTable({
             })}
           </tbody>
         </table>
-
-        {expenses.length > 0 && (
-          <div className="mt-4 text-sm text-gray-600 space-y-1">
-            <p>💡 <strong>Советы:</strong></p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Используйте Tab или Enter для перехода между ячейками</li>
-              <li>Обязательные поля отмечены звёздочкой (*)</li>
-            </ul>
-          </div>
-        )}
       </div>
     </div>
   )

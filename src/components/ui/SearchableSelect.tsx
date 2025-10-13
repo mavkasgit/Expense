@@ -22,6 +22,7 @@ interface SearchableSelectProps {
   maxVisibleOptions?: number
   defaultOpen?: boolean
   forceOpen?: boolean
+  onBlur?: () => void
 }
 
 const optionHeightMap: Record<NonNullable<SearchableSelectProps['size']>, number> = {
@@ -41,7 +42,8 @@ export function SearchableSelect({
   size = 'md',
   maxVisibleOptions,
   defaultOpen = false,
-  forceOpen = false
+  forceOpen = false,
+  onBlur
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(forceOpen || defaultOpen)
   const [searchTerm, setSearchTerm] = useState('')
@@ -73,12 +75,13 @@ export function SearchableSelect({
         setIsOpen(false)
         setSearchTerm('')
         setHighlightedIndex(-1)
+        onBlur?.()
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [forceOpen])
+  }, [forceOpen, onBlur])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return
@@ -189,7 +192,7 @@ export function SearchableSelect({
       {shouldRenderDropdown && (
         <div
           className={cn(
-            'mt-1 w-full overflow-auto rounded-md border border-gray-300 bg-white',
+            'mt-1 min-w-full w-auto overflow-auto rounded-md border border-gray-300 bg-white',
             forceOpen ? 'relative z-0 shadow-sm' : 'absolute z-50 shadow-lg'
           )}
           style={dropdownStyle}

@@ -22,8 +22,9 @@ export function useBulkExpenseState() {
   const [expenses, setExpenses] = useState<BulkExpenseRowData[]>([]);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  const addRow = useCallback(() => {
-    setExpenses(prev => [...prev, createEmptyRow()]);
+  const addRow = useCallback((count = 1) => {
+    const newRows = Array.from({ length: count }, createEmptyRow);
+    setExpenses(prev => [...prev, ...newRows]);
   }, []);
 
   const removeRow = useCallback((tempId: string) => {

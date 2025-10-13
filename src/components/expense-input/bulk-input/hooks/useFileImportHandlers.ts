@@ -42,6 +42,7 @@ interface FileImportHandlers {
   isPreviewModalOpen: boolean;
   isDragOver: boolean;
   handlePaste: (event: React.ClipboardEvent) => void;
+  handleClipboardImport: () => Promise<void>;
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleTableSelection: (index: number, tableInfo?: TableInfo) => Promise<void>;
   handlePreviewTable: (tableIndex: number) => void;
@@ -99,19 +100,17 @@ export function useFileImportHandlers({
     [onOpenColumnMapping],
   );
 
-  const handlePaste = useCallback(
-    async (event: React.ClipboardEvent) => {
-      event.preventDefault();
-
+  const processClipboardPayload = useCallback(
+    async ({ htmlData, textData }: { htmlData?: string; textData?: string }) => {
       setSelectedTableMeta(null);
       setAvailableTables([]);
       setFileContent(null);
       setFileName('');
 
       try {
-        const htmlData = event.clipboardData.getData('text/html');
-        if (htmlData && htmlData.includes('<table')) {
-          const parsed = parseHTML(htmlData);
+        const html = htmlData?.trim() ?? '';
+        if (html && html.includes('<table')) {
+          const parsed = parseHTML(html);
           const prepared = prepareParsedDataset(parsed);
           const dataset = prepared.rows;
 
@@ -135,13 +134,13 @@ export function useFileImportHandlers({
           return;
         }
 
-        const pastedText = event.clipboardData.getData('text');
-        if (!pastedText) {
+        const text = textData?.trim() ?? '';
+        if (!text) {
           showToast('Буфер обмена пуст', 'warning');
           return;
         }
 
-        const parsed = parseCSV(pastedText);
+        const parsed = parseCSV(text);
         const prepared = prepareParsedDataset(parsed);
         const dataset = prepared.rows;
 
@@ -169,6 +168,53 @@ export function useFileImportHandlers({
     },
     [appendSingleColumn, openColumnMapping, showToast],
   );
+
+  const handlePaste = useCallback(
+    async (event: React.ClipboardEvent) => {
+      event.preventDefault();
+      const htmlData = event.clipboardData.getData('text/html');
+      const textData = event.clipboardData.getData('text');
+      await processClipboardPayload({ htmlData, textData });
+    },
+    [processClipboardPayload],
+  );
+
+  const handleClipboardImport = useCallback(async () => {
+    try {
+      if (navigator?.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        let htmlData = '';
+        let textData = '';
+
+        for (const item of items) {
+          if (item.types.includes('text/html') && !htmlData) {
+            const blob = await item.getType('text/html');
+            htmlData = await blob.text();
+          }
+          if (item.types.includes('text/plain') && !textData) {
+            const blob = await item.getType('text/plain');
+            textData = await blob.text();
+          }
+        }
+
+        if (htmlData || textData) {
+          await processClipboardPayload({ htmlData, textData });
+          return;
+        }
+      }
+
+      if (navigator?.clipboard?.readText) {
+        const textData = await navigator.clipboard.readText();
+        await processClipboardPayload({ textData });
+        return;
+      }
+
+      showToast('Не удалось получить доступ к буферу обмена. Используйте сочетание Ctrl+V.', 'warning');
+    } catch (error) {
+      console.error('Ошибка чтения буфера обмена', error);
+      showToast('Не удалось прочитать буфер обмена. Разрешите доступ или вставьте вручную.', 'error');
+    }
+  }, [processClipboardPayload, showToast]);
 
   const processTableSelection = useCallback(
     async (
@@ -403,6 +449,7 @@ export function useFileImportHandlers({
     isPreviewModalOpen,
     isDragOver,
     handlePaste,
+    handleClipboardImport,
     handleFileUpload,
     handleTableSelection,
     handlePreviewTable,

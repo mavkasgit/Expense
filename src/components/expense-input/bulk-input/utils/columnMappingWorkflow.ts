@@ -43,7 +43,9 @@ export function createColumnMappingHandlers({
   const applyMapping = async (mapping: ColumnMapping[], mode: 'append' | 'directSave') => {
     const sanitized = sanitizeColumnMapping(mapping);
     persistColumnMapping(sanitized);
-    setSavedColumnMapping(sanitized.length > 0 ? sanitized : null);
+
+    const hasActiveMapping = sanitized.some(m => m.targetFields && m.targetFields.length > 0);
+    setSavedColumnMapping(hasActiveMapping ? sanitized : null);
 
     if (mode === 'append' && isEditingColumnMapping) {
       showToast('Настройки столбцов сохранены', 'success');

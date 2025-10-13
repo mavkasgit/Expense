@@ -111,6 +111,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     isPreviewModalOpen,
     isDragOver,
     handlePaste,
+    handleClipboardImport,
     handleFileUpload,
     handleTableSelection,
     handlePreviewTable,
@@ -137,7 +138,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       }
 
       setExpenses(prev => [...prev, ...importedExpenses]);
-      setPastedData([]);
+      // Не очищаем pastedData, чтобы можно было быстро переоткрыть настройку
+      // setPastedData([]);
       setHasHeaderRow(false);
       showToast(`Добавлено ${importedExpenses.length} из ${stats.totalRows} записей`, 'success');
       if (stats.autoDetectedCities > 0 || stats.detectedTimes > 0 || stats.manualTimes > 0) {
@@ -154,7 +156,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         showToast('Проверьте импортированные данные перед сохранением.', 'info');
       }
     },
-    [setExpenses, setHasHeaderRow, setPastedData, showToast],
+    [setExpenses, setHasHeaderRow, showToast],
   );
 
   const saveImportedExpenses = useCallback(
@@ -263,9 +265,41 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     setIsColumnMappingOpen(true);
   }, [setHasHeaderRow, setPastedData]);
 
+  const handleOpenColumnMappingWithData = useCallback(() => {
+    // Если есть данные - открываем сразу
+    if (pastedData.length > 0) {
+      setIsEditingColumnMapping(false);
+      setIsColumnMappingOpen(true);
+      return;
+    }
+    
+    // Если файл загружен, но таблица не выбрана - открываем выбор таблицы
+    if (fileContent && !selectedTableMeta && savedTableIndex === null) {
+      setShowTableSelection(true);
+      return;
+    }
+    
+    // Если таблица выбрана, но данные очищены - загружаем таблицу
+    if (fileContent && (selectedTableMeta || savedTableIndex !== null)) {
+      const indexToUse = selectedTableMeta?.index ?? savedTableIndex ?? 0;
+      handleTableSelection(indexToUse);
+      return;
+    }
+    
+    showToast('Сначала импортируйте данные из файла или буфера обмена', 'warning');
+  }, [pastedData, fileContent, selectedTableMeta, savedTableIndex, setShowTableSelection, handleTableSelection, showToast]);
+
   const handleBrowseFiles = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  const handleClearFile = useCallback(() => {
+    clearFileState();
+    setSelectedTableMeta(null);
+    setPastedData([]);
+    setHasHeaderRow(false);
+    showToast('Файл удалён', 'info');
+  }, [clearFileState, setSelectedTableMeta, setPastedData, setHasHeaderRow, showToast]);
 
   const handleClearExpenses = useCallback(() => {
     clearAll();
@@ -393,21 +427,20 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
       <Card className="space-y-6 p-6">
         <BulkImportHeader
-          onAddRow={addRow}
-          onBrowse={handleBrowseFiles}
           onOpenColumnMapping={handleOpenColumnMappingSettings}
+          onOpenColumnMappingWithData={handleOpenColumnMappingWithData}
           onOpenTableSelection={() => setShowTableSelection(true)}
-          onResetTableIndex={handleResetTableIndex}
+          onAddRows={addRow}
           isFileLoading={isFileLoading}
-          fileStatusMessage={fileStatusMessage}
           canChooseTable={Boolean(fileContent && availableTables.length > 1)}
           hasSelectedTable={Boolean(selectedTableMeta || savedTableIndex !== null)}
           hasSavedColumnMapping={Boolean(savedColumnMapping?.length)}
-          showResetTableButton={isMounted && savedTableIndex !== null}
+          savedMappingCount={savedColumnMapping?.length ?? 0}
           hasExpenses={expenses.length > 0}
           onClear={handleClearExpenses}
           onDirectSave={handleDirectSave}
           isSubmitting={isSubmitting}
+          hasFileLoaded={Boolean(fileContent)}
         />
 
         {selectedTableMeta && (
@@ -424,9 +457,14 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             isDragOver={isDragOver}
             onBrowse={handleBrowseFiles}
             onPaste={handlePaste}
+            onImportFromClipboard={handleClipboardImport}
+            fileName={fileName || undefined}
+            isFileLoading={isFileLoading}
+            fileStatusMessage={fileStatusMessage}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onClearFile={handleClearFile}
           />
         ) : (
           <BulkExpenseTable
