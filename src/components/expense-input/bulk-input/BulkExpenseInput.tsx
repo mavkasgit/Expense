@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { useToast } from '@/hooks/useToast';
 import { useCitySynonyms } from '@/hooks/useCitySynonyms';
@@ -34,7 +33,6 @@ interface BulkExpenseInputProps {
 }
 
 export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
-  const router = useRouter();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,7 +49,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   } = useBulkExpenseState();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [autoRedirect, setAutoRedirect] = useState(false);
   const [isColumnMappingOpen, setIsColumnMappingOpen] = useState(false);
   const [isEditingColumnMapping, setIsEditingColumnMapping] = useState(false);
   const [savedColumnMapping, setSavedColumnMapping] = useState<ColumnMapping[] | null>(null);
@@ -228,15 +225,12 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             const suffix = details.length > 0 ? ` (${details.join(', ')})` : '';
             showToast(`Автоматически заполненные поля сохранены${suffix}. Проверьте их в списке расходов.`, 'info');
           }
-          if (autoRedirect) {
-            router.push('/expenses');
-          }
         }
         return success > 0;
       }
       return false;
     },
-    [autoRedirect, clearFileState, fileName, router, setHasHeaderRow, setPastedData, showToast],
+    [clearFileState, fileName, setHasHeaderRow, setPastedData, showToast],
   );
 
   const { handleColumnMappingApply, handleColumnMappingApplyAndSave, handleReviewCancel, handleReviewConfirm } =
@@ -340,9 +334,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           clearFileState();
           setSelectedTableMeta(null);
           setValidationErrors({});
-          if (autoRedirect) {
-            router.push('/expenses');
-          }
         }
       }
     } catch (error) {
@@ -352,12 +343,10 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       setIsSubmitting(false);
     }
   }, [
-    autoRedirect,
     clearAll,
     clearFileState,
     expenses,
     fileName,
-    router,
     setSelectedTableMeta,
     setValidationErrors,
     showToast,
@@ -404,8 +393,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
       <Card className="space-y-6 p-6">
         <BulkImportHeader
-          autoRedirect={autoRedirect}
-          onToggleAutoRedirect={() => setAutoRedirect(prev => !prev)}
           onAddRow={addRow}
           onBrowse={handleBrowseFiles}
           onOpenColumnMapping={handleOpenColumnMappingSettings}
@@ -414,7 +401,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           isFileLoading={isFileLoading}
           fileStatusMessage={fileStatusMessage}
           canChooseTable={Boolean(fileContent && availableTables.length > 1)}
-          hasSavedIndicator={Boolean(isMounted && (savedColumnMapping?.length || savedTableIndex !== null))}
+          hasSelectedTable={Boolean(selectedTableMeta || savedTableIndex !== null)}
+          hasSavedColumnMapping={Boolean(savedColumnMapping?.length)}
           showResetTableButton={isMounted && savedTableIndex !== null}
           hasExpenses={expenses.length > 0}
           onClear={handleClearExpenses}
