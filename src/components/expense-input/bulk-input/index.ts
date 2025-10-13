@@ -1,4 +1,4 @@
-export { BulkExpenseInput } from './BulkExpenseInput'
-export { BulkExpenseTable } from './BulkExpenseTable'
-export { BulkExpensePreview } from './BulkExpensePreview'
-export { ColumnMappingModal } from './ColumnMappingModal'
+export { BulkExpenseInput } from './BulkExpenseInput';
+export { BulkExpenseTable } from './components/BulkExpenseTable';
+export { BulkExpensePreview } from './components/BulkExpensePreview';
+export { ColumnMappingModal } from './components/ColumnMappingModal';
