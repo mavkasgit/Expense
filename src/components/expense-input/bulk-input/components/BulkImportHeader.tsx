@@ -1,10 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/utils';
 
 interface BulkImportHeaderProps {
-  autoRedirect: boolean;
-  onToggleAutoRedirect: () => void;
   onAddRow: () => void;
   onBrowse: () => void;
   onOpenColumnMapping: () => void;
@@ -13,7 +12,8 @@ interface BulkImportHeaderProps {
   isFileLoading: boolean;
   fileStatusMessage?: string;
   canChooseTable: boolean;
-  hasSavedIndicator: boolean;
+  hasSelectedTable: boolean;
+  hasSavedColumnMapping: boolean;
   showResetTableButton: boolean;
   hasExpenses: boolean;
   onClear: () => void;
@@ -22,8 +22,6 @@ interface BulkImportHeaderProps {
 }
 
 export function BulkImportHeader({
-  autoRedirect,
-  onToggleAutoRedirect,
   onAddRow,
   onBrowse,
   onOpenColumnMapping,
@@ -32,7 +30,8 @@ export function BulkImportHeader({
   isFileLoading,
   fileStatusMessage,
   canChooseTable,
-  hasSavedIndicator,
+  hasSelectedTable,
+  hasSavedColumnMapping,
   showResetTableButton,
   hasExpenses,
   onClear,
@@ -49,100 +48,114 @@ export function BulkImportHeader({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onToggleAutoRedirect}
-            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors ${
-              autoRedirect ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-600'
-            }`}
-          >
-            <span
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoRedirect ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
+        <div className="flex w-full flex-col gap-4 sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Таблицы и столбцы
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBrowse}
+              disabled={isFileLoading}
+              className={isFileLoading ? 'cursor-wait opacity-80' : undefined}
             >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  autoRedirect ? 'translate-x-4' : 'translate-x-1'
-                }`}
-              />
-            </span>
-            Автопереход
-          </button>
-
-          <Button onClick={onAddRow} size="sm">
-            + Добавить строку
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onBrowse}
-            disabled={isFileLoading}
-            className={isFileLoading ? 'cursor-wait opacity-80' : undefined}
-          >
-            {isFileLoading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Обработка...
-              </span>
-            ) : (
-              '📁 Загрузить файл'
-            )}
-          </Button>
-
-          {canChooseTable && (
-            <Button variant="outline" size="sm" onClick={onOpenTableSelection} disabled={isFileLoading}>
-              📊 Выбрать таблицу
+              {isFileLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Обработка...
+                </span>
+              ) : (
+                '📁 Загрузить файл'
+              )}
             </Button>
-          )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenColumnMapping}
-            title="Настроить соответствие столбцов для импорта"
-          >
-            <span className="inline-flex items-center gap-1">
-              ⚙️ Настройка столбцов
-              <span
-                className={`ml-1 inline-flex h-2 w-2 rounded-full transition-opacity ${
-                  hasSavedIndicator ? 'bg-blue-500 opacity-100' : 'opacity-0'
-                }`}
-              />
-            </span>
-          </Button>
-
-          {showResetTableButton && (
-            <Button variant="outline" size="sm" onClick={onResetTableIndex}>
-              ♻️ Сбросить выбор таблицы
-            </Button>
-          )}
-
-          {hasExpenses && (
-            <>
-              <Button variant="outline" size="sm" onClick={onClear}>
-                🗑️ Очистить
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={onDirectSave}
-                disabled={isSubmitting}
-                className={isSubmitting ? 'animate-pulse' : undefined}
-              >
-                {isSubmitting ? (
+            {canChooseTable && (
+              <div className="relative inline-flex">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenTableSelection}
+                  disabled={isFileLoading}
+                  className={cn(
+                    'pr-10 transition-all duration-200',
+                    hasSelectedTable &&
+                      'border-green-500 bg-green-50 text-green-700 shadow-[0_0_0_2px_rgba(34,197,94,0.18)] hover:bg-green-100',
+                  )}
+                >
                   <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Сохранение...
+                    <span aria-hidden>📊</span>
+                    <span>{hasSelectedTable ? 'Таблица выбрана' : 'Выбрать таблицу'}</span>
                   </span>
-                ) : (
-                  '💾 Сохранить'
+                </Button>
+                {hasSelectedTable && (
+                  <span className="pointer-events-none absolute -top-2 right-1 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-600 shadow-sm">
+                    ✓ Готово
+                  </span>
                 )}
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenColumnMapping}
+              title="Настроить соответствие столбцов для импорта"
+              className={cn(
+                'pr-12 transition-all duration-200',
+                hasSavedColumnMapping &&
+                  'border-indigo-500 bg-indigo-50 text-indigo-600 shadow-[0_0_0_2px_rgba(79,70,229,0.18)] hover:bg-indigo-100',
+              )}
+            >
+              <span className="inline-flex items-center gap-1">⚙️ Настройка столбцов</span>
+            </Button>
+            {hasSavedColumnMapping && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-600 shadow-sm">
+                ✓ Настройки сохранены
+              </span>
+            )}
+
+            {showResetTableButton && (
+              <Button variant="outline" size="sm" onClick={onResetTableIndex}>
+                ♻️ Сбросить выбор таблицы
               </Button>
-            </>
-          )}
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Строки и сохранение
+            </span>
+
+            <Button onClick={onAddRow} size="sm">
+              + Добавить строку
+            </Button>
+
+            {hasExpenses && (
+              <>
+                <Button variant="outline" size="sm" onClick={onClear}>
+                  🗑️ Очистить
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={onDirectSave}
+                  disabled={isSubmitting}
+                  className={isSubmitting ? 'animate-pulse' : undefined}
+                >
+                  {isSubmitting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Сохранение...
+                    </span>
+                  ) : (
+                    '💾 Сохранить'
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
