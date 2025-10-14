@@ -21,6 +21,7 @@ interface ColumnMappingWorkflowOptions {
   setIsEditingColumnMapping: (value: boolean) => void;
   hasPendingDataset: boolean;
   persistColumnMapping: (mapping: ColumnMapping[]) => void;
+  currentFormat?: string | null;
 }
 
 export function createColumnMappingHandlers({
@@ -39,6 +40,7 @@ export function createColumnMappingHandlers({
   setIsEditingColumnMapping,
   hasPendingDataset,
   persistColumnMapping,
+  currentFormat,
 }: ColumnMappingWorkflowOptions) {
   const applyMapping = async (mapping: ColumnMapping[], mode: 'append' | 'directSave') => {
     const sanitized = sanitizeColumnMapping(mapping);
@@ -47,9 +49,39 @@ export function createColumnMappingHandlers({
     const hasActiveMapping = sanitized.some(m => m.targetFields && m.targetFields.length > 0);
     setSavedColumnMapping(hasActiveMapping ? sanitized : null);
 
+    // Иконки и названия форматов
+    const formatIcons: Record<string, string> = {
+      csv: '📄',
+      xlsx: '📊',
+      xls: '📊',
+      html: '🌐',
+      clipboard: '📋',
+      unknown: '📁'
+    };
+    
+    const formatLabels: Record<string, string> = {
+      csv: 'CSV',
+      xlsx: 'Excel (XLSX)',
+      xls: 'Excel (XLS)',
+      html: 'HTML',
+      clipboard: 'Буфер обмена',
+      unknown: 'Неизвестный формат'
+    };
+    
+    const formatIcon = currentFormat ? formatIcons[currentFormat] || '📁' : '📁';
+    const formatLabel = currentFormat ? formatLabels[currentFormat] || 'Неизвестный формат' : '';
+
+    // Если просто редактируем настройки без обработки данных
     if (mode === 'append' && isEditingColumnMapping) {
-      showToast('Настройки столбцов сохранены', 'success');
+      const message = currentFormat ? `${formatIcon} Настройки ${formatLabel}` : 'Настройки сохранены';
+      showToast(message, 'success');
       return;
+    }
+    
+    // Показываем уведомление о сохранении настроек
+    if (mode === 'append' && hasActiveMapping) {
+      const message = currentFormat ? `${formatIcon} Настройки ${formatLabel}` : 'Настройки сохранены';
+      showToast(message, 'success');
     }
 
     const result = buildExpensesFromMapping({
@@ -64,17 +96,7 @@ export function createColumnMappingHandlers({
       return;
     }
 
-    if (result.reviewItems.length > 0) {
-      setReviewModalState({ mode, result });
-      showToast(
-        mode === 'append'
-          ? 'Найдены автоматически выделенные поля. Подтвердите импорт.'
-          : 'Найдены автоматически выделенные поля. Подтвердите сохранение.',
-        'info',
-      );
-      return;
-    }
-
+    // Сразу применяем без подтверждения
     if (mode === 'append') {
       appendImportStats(result, 'append');
     } else {

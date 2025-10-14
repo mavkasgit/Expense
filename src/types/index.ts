@@ -557,6 +557,9 @@ export interface ColumnMapping {
   enabled: boolean
   preview: string
   hidden?: boolean
+  customSplitSeparator?: string
+  customSplitParts?: Record<string, number> // field -> part index
+  customSplitExample?: string // пример строки для демонстрации разделения
 }
 
 export type BulkImportResult = {

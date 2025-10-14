@@ -25,6 +25,9 @@ import { DEFAULT_SAMPLE_HEADERS } from './constants';
 import {
   loadSavedColumnMapping,
   saveColumnMapping as persistColumnMapping,
+  getDataSourceFormat,
+  loadAllFormatMappings,
+  type DataSourceFormat,
 } from './utils/storage';
 import type { BuildExpensesResult, ReviewModalState } from './types';
 
@@ -55,6 +58,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const [reviewModalState, setReviewModalState] = useState<ReviewModalState | null>(null);
   const [isReviewProcessing, setIsReviewProcessing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [currentFormat, setCurrentFormat] = useState<DataSourceFormat | null>(null);
 
   const { synonyms: citySynonyms } = useCitySynonyms();
   const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(
@@ -125,9 +129,27 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
   useEffect(() => {
     setIsMounted(true);
-    const storedMapping = loadSavedColumnMapping();
-    setSavedColumnMapping(storedMapping.length > 0 ? storedMapping : null);
   }, []);
+
+  // Определяем формат при изменении источника данных
+  useEffect(() => {
+    if (pastedData.length > 0 || fileName) {
+      const format = getDataSourceFormat(fileName || undefined);
+      setCurrentFormat(format);
+    } else {
+      setCurrentFormat(null);
+    }
+  }, [fileName, pastedData.length]);
+
+  // Загружаем сохраненные настройки для текущего формата
+  useEffect(() => {
+    if (!currentFormat) {
+      setSavedColumnMapping(null);
+      return;
+    }
+    const storedMapping = loadSavedColumnMapping(currentFormat);
+    setSavedColumnMapping(storedMapping.length > 0 ? storedMapping : null);
+  }, [currentFormat]);
 
   const appendImportStats = useCallback(
     (result: BuildExpensesResult) => {
@@ -142,19 +164,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       // setPastedData([]);
       setHasHeaderRow(false);
       showToast(`Добавлено ${importedExpenses.length} из ${stats.totalRows} записей`, 'success');
-      if (stats.autoDetectedCities > 0 || stats.detectedTimes > 0 || stats.manualTimes > 0) {
-        const details: string[] = [];
-        if (stats.autoDetectedCities > 0) {
-          details.push(`автогорода: ${stats.autoDetectedCities}`);
-        }
-        if (stats.manualTimes + stats.detectedTimes > 0) {
-          details.push(`время: ${stats.manualTimes + stats.detectedTimes}`);
-        }
-        const suffix = details.length > 0 ? ` (${details.join(', ')})` : '';
-        showToast(`Пожалуйста, подтвердите автоматически заполненные поля${suffix}.`, 'info');
-      } else {
-        showToast('Проверьте импортированные данные перед сохранением.', 'info');
-      }
     },
     [setExpenses, setHasHeaderRow, showToast],
   );
@@ -251,19 +260,29 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       setIsColumnMappingOpen,
       setIsEditingColumnMapping,
       hasPendingDataset: pastedData.length > 0,
-      persistColumnMapping,
+      persistColumnMapping: (mapping: ColumnMapping[]) => persistColumnMapping(mapping, currentFormat || undefined),
+      currentFormat,
     });
 
   const handleOpenColumnMappingSettings = useCallback(() => {
-    const saved = loadSavedColumnMapping();
-    const headerRow = saved.length > 0
-      ? saved.map((_, index) => `Столбец ${String.fromCharCode(65 + index)}`)
-      : [...DEFAULT_SAMPLE_HEADERS];
+    const saved = loadSavedColumnMapping(currentFormat || undefined);
+    
+    // Находим максимальный sourceIndex чтобы создать нужное количество столбцов
+    const maxSourceIndex = saved.length > 0 
+      ? Math.max(...saved.map(m => m.sourceIndex))
+      : DEFAULT_SAMPLE_HEADERS.length - 1;
+    
+    // Создаем заголовки для всех столбцов до максимального индекса
+    const columnCount = maxSourceIndex + 1;
+    const headerRow = Array.from({ length: columnCount }, (_, index) => 
+      `Столбец ${String.fromCharCode(65 + index)}`
+    );
+    
     setPastedData([headerRow]);
     setHasHeaderRow(false);
     setIsEditingColumnMapping(true);
     setIsColumnMappingOpen(true);
-  }, [setHasHeaderRow, setPastedData]);
+  }, [setHasHeaderRow, setPastedData, currentFormat]);
 
   const handleOpenColumnMappingWithData = useCallback(() => {
     // Если есть данные - открываем сразу
@@ -435,12 +454,12 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           canChooseTable={Boolean(fileContent && availableTables.length > 1)}
           hasSelectedTable={Boolean(selectedTableMeta || savedTableIndex !== null)}
           hasSavedColumnMapping={Boolean(savedColumnMapping?.length)}
-          savedMappingCount={savedColumnMapping?.length ?? 0}
           hasExpenses={expenses.length > 0}
           onClear={handleClearExpenses}
           onDirectSave={handleDirectSave}
           isSubmitting={isSubmitting}
           hasFileLoaded={Boolean(fileContent)}
+          currentFormat={currentFormat}
         />
 
         {selectedTableMeta && (
@@ -506,12 +525,15 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         isOpen={isColumnMappingOpen}
         onClose={handleCloseColumnMapping}
         onApply={handleColumnMappingApply}
-        onApplyAndSave={handleColumnMappingApplyAndSave}
         sampleData={pastedData}
         savedMapping={savedColumnMapping}
         isEditingMode={isEditingColumnMapping}
         tableDescription={selectedTableMeta?.description}
         onReplaceTable={handleRequestTableReplacement}
+        currentFormat={currentFormat}
+        onFormatChange={(format) => {
+          setCurrentFormat(format);
+        }}
       />
     </div>
   );

@@ -4,14 +4,12 @@ import {
   parseDateAndTime,
   parseTimeValue,
 } from '@/lib/utils/bankStatementParsers';
-import { extractCityFromDescription } from '@/lib/utils/cityParser';
 import type { ColumnMapping } from '@/types';
 import type { CityOption } from '@/lib/utils/cityOptions';
 import type { BulkExpenseRowData } from '@/lib/validations/expenses';
 import { sanitizeColumnMapping, isColumnMappingField } from './columnMapping';
 import { getColumnLabel, hasMeaningfulData, normalizeRow } from './dataset';
 import type {
-  AutoExtractionReviewItem,
   BuildExpensesResult,
   BuildExpensesStats,
 } from '../types';
@@ -44,10 +42,10 @@ export function buildExpensesFromMappedData({
   }
 
   const headerRow = hasHeaderRow ? dataset[0] : null;
-  const mappingWithMeta = sanitizeColumnMapping(mapping).map((column, columnIndex) => ({
+  const mappingWithMeta = sanitizeColumnMapping(mapping).map((column) => ({
     ...column,
-    columnIndex,
-    columnLabel: getColumnLabel(columnIndex, headerRow),
+    columnIndex: column.sourceIndex,
+    columnLabel: getColumnLabel(column.sourceIndex, headerRow),
     targetFields: Array.isArray(column.targetFields)
       ? column.targetFields.filter(isColumnMappingField)
       : [],
@@ -60,16 +58,11 @@ export function buildExpensesFromMappedData({
   stats.totalRows = rowsToProcess.length;
 
   const newExpenses: BulkExpenseRowData[] = [];
-  const reviewItems: AutoExtractionReviewItem[] = [];
 
   rowsToProcess.forEach((row, dataRowIndex) => {
     const expenseData: Partial<BulkExpenseRowData> & { expense_time?: string | null } = {
       tempId: crypto.randomUUID(),
     };
-
-    let descriptionColumnLabel: string | null = null;
-    let descriptionSourceValue = '';
-    let descriptionColumnIndex: number | null = null;
 
     mappingWithMeta.forEach(column => {
       if (column.hidden || !column.enabled || column.targetFields.length === 0) {
@@ -81,31 +74,45 @@ export function buildExpensesFromMappedData({
         return;
       }
 
+      // Проверяем есть ли кастомное разделение для этого столбца
+      const hasCustomSplit = column.customSplitSeparator && column.customSplitParts && Object.keys(column.customSplitParts).length > 0;
+      const splitValues: Record<string, string> = {};
+      
+      if (hasCustomSplit && column.customSplitSeparator && column.customSplitParts) {
+        // Применяем кастомное разделение
+        const parts = cellValue.split(column.customSplitSeparator).map(s => s.trim()).filter(s => s);
+        Object.entries(column.customSplitParts).forEach(([field, partIndex]) => {
+          if (partIndex < parts.length) {
+            splitValues[field] = parts[partIndex];
+          }
+        });
+      }
+
       column.targetFields.forEach(targetField => {
+        // Если есть кастомное разделение, используем ТОЛЬКО значения из splitValues
+        // Если для поля нет значения в splitValues - значит разделение не дало результата для этого поля
+        const fieldValue = hasCustomSplit ? (splitValues[targetField] || '') : cellValue;
         switch (targetField) {
           case 'amount': {
             try {
-              const parsedAmount = parseAmount(cellValue);
+              const parsedAmount = parseAmount(fieldValue);
               const normalizedAmount = Math.abs(parsedAmount);
               if (normalizedAmount > 0) {
                 expenseData.amount = normalizedAmount;
               }
             } catch (error) {
-              console.warn('Не удалось распарсить сумму из столбца', cellValue, error);
+              console.warn('Не удалось распарсить сумму из столбца', fieldValue, error);
             }
             break;
           }
           case 'description':
-            expenseData.description = cellValue;
-            descriptionColumnLabel = column.columnLabel;
-            descriptionSourceValue = cellValue;
-            descriptionColumnIndex = column.columnIndex;
+            expenseData.description = fieldValue;
             break;
           case 'city':
-            expenseData.city = cellValue;
+            expenseData.city = fieldValue;
             break;
           case 'expense_date': {
-            const dateTimeResult = parseDateAndTime(cellValue);
+            const dateTimeResult = parseDateAndTime(fieldValue);
             expenseData.expense_date = dateTimeResult.date;
             if (dateTimeResult.time && !expenseData.expense_time) {
               expenseData.expense_time = dateTimeResult.time;
@@ -117,7 +124,7 @@ export function buildExpensesFromMappedData({
             if (expenseData.expense_time) {
               break;
             }
-            const parsedTime = parseTimeValue(cellValue);
+            const parsedTime = parseTimeValue(fieldValue);
             if (parsedTime) {
               expenseData.expense_time = parsedTime;
               stats.manualTimes += 1;
@@ -125,7 +132,7 @@ export function buildExpensesFromMappedData({
             break;
           }
           case 'notes':
-            expenseData.notes = cellValue;
+            expenseData.notes = fieldValue;
             break;
         }
       });
@@ -135,22 +142,11 @@ export function buildExpensesFromMappedData({
       return;
     }
 
-    let cleanDescription = expenseData.description.trim();
-    let notes = expenseData.notes?.trim() || '';
-    let detectedCity: string | null = null;
+    const description = expenseData.description.trim();
+    const notes = expenseData.notes?.trim() || '';
 
-    if (cleanDescription) {
-      const cityParseResult = extractCityFromDescription(cleanDescription);
-      if (cityParseResult.confidence > 0.6) {
-        cleanDescription = cityParseResult.cleanDescription;
-        if (!expenseData.city && cityParseResult.displayCity) {
-          detectedCity = cityParseResult.displayCity;
-        }
-      }
-    }
-
-    const providedCity = expenseData.city?.trim();
-    let finalCity = providedCity || detectedCity || '';
+    const providedCity = expenseData.city?.trim() || '';
+    let finalCity = providedCity;
     let resolvedCityId: string | null = null;
 
     if (providedCity) {
@@ -160,32 +156,11 @@ export function buildExpensesFromMappedData({
         finalCity = resolved.cityName;
         resolvedCityId = resolved.cityId;
       }
-    } else if (detectedCity) {
-      stats.autoDetectedCities += 1;
-      const resolved = resolveCityByInput(detectedCity);
-      if (resolved) {
-        finalCity = resolved.cityName;
-        resolvedCityId = resolved.cityId;
-      }
-
-      const reviewNote = `Автодетект города: ${finalCity || detectedCity}`;
-      if (!notes.includes(reviewNote)) {
-        notes = notes ? `${notes}\n${reviewNote}` : reviewNote;
-      }
-
-      reviewItems.push({
-        type: 'city-from-description',
-        rowIndex: dataRowIndex + 1,
-        columnLabel: descriptionColumnLabel || getColumnLabel(descriptionColumnIndex ?? 0, headerRow),
-        sourceValue: descriptionSourceValue,
-        extractedCity: finalCity || detectedCity,
-        cleanedDescription: cleanDescription,
-      });
     }
 
     newExpenses.push({
       amount: expenseData.amount,
-      description: cleanDescription,
+      description,
       notes,
       category_id: '',
       expense_date: expenseData.expense_date || getCurrentDateISO(),
@@ -199,7 +174,7 @@ export function buildExpensesFromMappedData({
   stats.importedRows = newExpenses.length;
   stats.skippedRows = Math.max(stats.totalRows - stats.importedRows, 0);
 
-  return { expenses: newExpenses, stats, reviewItems };
+  return { expenses: newExpenses, stats, reviewItems: [] };
 }
 
 export function buildSingleColumnExpenses(rows: string[][], hasHeaderRow: boolean): BulkExpenseRowData[] {

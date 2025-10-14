@@ -5,16 +5,6 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
 
-function getPluralizedMappings(count: number): string {
-  if (count % 10 === 1 && count % 100 !== 11) {
-    return 'Настройка';
-  }
-  if ([2, 3, 4].includes(count % 10) && ![12, 13, 14].includes(count % 100)) {
-    return 'Настройки';
-  }
-  return 'Настроек';
-}
-
 interface BulkImportHeaderProps {
   onOpenColumnMapping: () => void;
   onOpenColumnMappingWithData: () => void;
@@ -24,12 +14,12 @@ interface BulkImportHeaderProps {
   canChooseTable: boolean;
   hasSelectedTable: boolean;
   hasSavedColumnMapping: boolean;
-  savedMappingCount?: number;
   hasExpenses: boolean;
   onClear: () => void;
   onDirectSave: () => void;
   isSubmitting: boolean;
   hasFileLoaded: boolean;
+  currentFormat?: string | null;
 }
 
 export function BulkImportHeader({
@@ -41,15 +31,37 @@ export function BulkImportHeader({
   canChooseTable,
   hasSelectedTable,
   hasSavedColumnMapping,
-  savedMappingCount = 0,
   hasExpenses,
   onClear,
   onDirectSave,
   isSubmitting,
   hasFileLoaded,
+  currentFormat,
 }: BulkImportHeaderProps) {
   const [addCount, setAddCount] = useState(1);
   const canAddRows = !hasExpenses;
+
+  // Иконки и названия форматов
+  const formatIcons: Record<string, string> = {
+    csv: '📄',
+    xlsx: '📊',
+    xls: '📊',
+    html: '🌐',
+    clipboard: '📋',
+    unknown: '📁'
+  };
+  
+  const formatLabels: Record<string, string> = {
+    csv: 'CSV',
+    xlsx: 'Excel',
+    xls: 'Excel',
+    html: 'HTML',
+    clipboard: 'Буфер обмена',
+    unknown: 'Формат'
+  };
+
+  const formatIcon = currentFormat ? formatIcons[currentFormat] || '⚙️' : '⚙️';
+  const formatLabel = currentFormat ? formatLabels[currentFormat] || 'Настройки' : 'Настройки';
 
   return (
     <div className="space-y-4">
@@ -145,7 +157,7 @@ export function BulkImportHeader({
             >
               <span className="inline-flex items-center gap-2">
                 {hasSavedColumnMapping
-                  ? `✓ ${savedMappingCount} ${getPluralizedMappings(savedMappingCount)} сохранено`
+                  ? `Настройка ${formatIcon} ${formatLabel}`
                   : '⚙️ Настройка столбцов'}
               </span>
             </Button>

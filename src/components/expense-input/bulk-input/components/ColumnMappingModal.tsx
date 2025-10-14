@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/Button'
 import type { ColumnMapping, ColumnMappingField } from '@/types'
 import { parseDateAndTime, parseTimeValue } from '@/lib/utils/bankStatementParsers'
 import { extractCityFromDescription } from '@/lib/utils/cityParser'
+import { loadAllFormatMappings, deleteColumnMapping } from '../utils/storage'
+import { useToast } from '@/hooks/useToast'
+import { TablePreviewModal } from './TablePreviewModal'
 
 // Компонент подсказки
 function Tooltip({ children, content }: { children: React.ReactNode; content: string }) {
@@ -35,12 +38,14 @@ interface ColumnMappingModalProps {
   isOpen: boolean
   onClose: () => void
   onApply: (mapping: ColumnMapping[]) => void
-  onApplyAndSave?: (mapping: ColumnMapping[]) => void // Новый проп для прямого сохранения
+
   sampleData: string[][] // Первые несколько строк для предпросмотра
   savedMapping?: ColumnMapping[] | null // Сохраненная схема столбцов
   isEditingMode?: boolean // Режим редактирования сохраненной схемы
   tableDescription?: string | null
   onReplaceTable?: () => void
+  currentFormat?: 'csv' | 'xlsx' | 'xls' | 'html' | 'clipboard' | 'unknown' | null
+  onFormatChange?: (format: 'csv' | 'xlsx' | 'xls' | 'html' | 'clipboard' | 'unknown') => void
 }
 
 const FIELD_ICONS: Record<ColumnMappingField, string> = {
@@ -70,13 +75,22 @@ const FIELD_COLORS: Record<ColumnMappingField, string> = {
   notes: 'bg-yellow-100 border-yellow-300 text-yellow-800'
 }
 
-const COLUMN_FIELD_OPTIONS: Array<{ field: ColumnMappingField; label: string; icon: string }> = (
-  Object.keys(FIELD_LABELS) as ColumnMappingField[]
-).map(field => ({
-  field,
-  label: FIELD_LABELS[field],
-  icon: FIELD_ICONS[field]
-}))
+// Порядок полей в выпадающем списке
+const FIELD_ORDER: ColumnMappingField[] = [
+  'expense_date',
+  'expense_time',
+  'amount',
+  'description',
+  'city',
+  'notes'
+]
+
+const COLUMN_FIELD_OPTIONS: Array<{ field: ColumnMappingField; label: string; icon: string }> = 
+  FIELD_ORDER.map(field => ({
+    field,
+    label: FIELD_LABELS[field],
+    icon: FIELD_ICONS[field]
+  }))
 
 const COLUMN_FIELD_SET = new Set<ColumnMappingField>(COLUMN_FIELD_OPTIONS.map(option => option.field))
 
@@ -160,14 +174,20 @@ function applyCustomSplit(
 export function ColumnMappingModal({ 
   isOpen, 
   onClose, 
-  onApply, 
-  onApplyAndSave,
+  onApply,
   sampleData,
   savedMapping,
   isEditingMode = false,
   tableDescription,
-  onReplaceTable
+  onReplaceTable,
+  currentFormat,
+  onFormatChange
 }: ColumnMappingModalProps) {
+  const { showToast } = useToast()
+  
+  // Состояние для предпросмотра таблицы
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  
   // Инициализируем порядок столбцов (только индексы)
   const [columnOrder, setColumnOrder] = useState<number[]>([])
 
@@ -187,8 +207,9 @@ export function ColumnMappingModal({
   // Состояние для тестовой строки и проверки комбинации
   const [selectedTestRow, setSelectedTestRow] = useState(0)
   const [checkingColumn, setCheckingColumn] = useState<number | null>(null)
+  const [checkedColumns, setCheckedColumns] = useState<Set<number>>(new Set())
   
-  // Настройки разделения для комбинаций
+  // Настройки разделения для комбинаций (для текущего проверяемого столбца)
   const [splitSettings, setSplitSettings] = useState<{
     separator: string
     customSeparator: string
@@ -198,6 +219,14 @@ export function ColumnMappingModal({
     customSeparator: '',
     parts: {}
   })
+  
+  // Сохраненные настройки разделения для каждого столбца
+  const [savedSplitSettings, setSavedSplitSettings] = useState<Record<number, {
+    separator: string
+    customSeparator: string
+    parts: Record<string, number>
+    example?: string
+  }>>({})
   
   // Состояние для примера разделения
   const [exampleSource, setExampleSource] = useState<'data' | 'manual'>('data')
@@ -233,14 +262,26 @@ export function ColumnMappingModal({
     const baseAssignments = createDefaultFieldAssignments()
     const nextHiddenColumns = new Set<number>()
 
-    if (savedMapping && savedMapping.length === columnCount) {
-      savedMapping.forEach((column, index) => {
-        const originalIndex = defaultOrder[index]
-        if (column?.hidden) {
-          nextHiddenColumns.add(originalIndex)
+    const nextSplitSettings: Record<number, {
+      separator: string
+      customSeparator: string
+      parts: Record<string, number>
+    }> = {}
+    
+    if (savedMapping && savedMapping.length > 0) {
+      savedMapping.forEach((column) => {
+        const columnIndex = column.sourceIndex
+        // Проверяем что такой столбец существует в данных
+        if (columnIndex >= columnCount) {
           return
         }
+        
+        // Восстанавливаем состояние скрытости столбца
+        if (column?.hidden) {
+          nextHiddenColumns.add(columnIndex)
+        }
 
+        // Восстанавливаем назначения полей (даже для скрытых столбцов)
         const targets = Array.isArray(column.targetFields)
           ? column.targetFields.filter(isColumnMappingField)
           : []
@@ -248,14 +289,35 @@ export function ColumnMappingModal({
         targets.forEach(targetField => {
           const assignment = baseAssignments.find(item => item.field === targetField)
           if (assignment) {
-            assignment.assignedColumn = originalIndex
+            assignment.assignedColumn = columnIndex
           }
         })
+        
+        // Восстанавливаем настройки кастомного разделения
+        if (column.customSplitSeparator && column.customSplitParts && Object.keys(column.customSplitParts).length > 0) {
+          nextSplitSettings[columnIndex] = {
+            separator: 'custom',
+            customSeparator: column.customSplitSeparator,
+            parts: column.customSplitParts,
+            example: column.customSplitExample // Восстанавливаем пример строки
+          }
+        }
       })
     }
 
     setFieldAssignments(baseAssignments)
     setHiddenColumns(nextHiddenColumns)
+    setSavedSplitSettings(nextSplitSettings)
+    
+    // Помечаем столбцы с сохраненными настройками разделения как проверенные
+    const checkedCols = new Set<number>()
+    Object.keys(nextSplitSettings).forEach(key => {
+      const columnIndex = parseInt(key, 10)
+      if (!isNaN(columnIndex)) {
+        checkedCols.add(columnIndex)
+      }
+    })
+    setCheckedColumns(checkedCols)
   }, [sampleData, savedMapping])
 
   useEffect(() => {
@@ -427,30 +489,45 @@ export function ColumnMappingModal({
 
   // Создание маппинга из текущих настроек
   const createMapping = useCallback(() => {
-    const mapping: ColumnMapping[] = columnOrder.map((originalIndex, newIndex) => ({
-      sourceIndex: newIndex,
-      targetFields: [],
-      enabled: false,
-      preview: sampleData[0]?.[originalIndex] || '',
-      hidden: hiddenColumns.has(originalIndex)
-    }))
+    const mapping: ColumnMapping[] = columnOrder.map((originalIndex) => {
+      const baseMapping: ColumnMapping = {
+        sourceIndex: originalIndex, // Сохраняем реальный индекс столбца
+        targetFields: [],
+        enabled: false,
+        preview: sampleData[0]?.[originalIndex] || '',
+        hidden: hiddenColumns.has(originalIndex)
+      }
+      
+      // Добавляем кастомные настройки разделения если они есть
+      const splitSettings = savedSplitSettings[originalIndex]
+      if (splitSettings && Object.keys(splitSettings.parts).length > 0) {
+        const separator = splitSettings.separator === 'custom' ? splitSettings.customSeparator : splitSettings.separator
+        baseMapping.customSplitSeparator = separator
+        baseMapping.customSplitParts = splitSettings.parts
+        // Сохраняем пример строки из настроек (была выбрана/введена в окне проверки)
+        if (splitSettings.example) {
+          baseMapping.customSplitExample = splitSettings.example
+        }
+      }
+      
+      return baseMapping
+    })
 
     // Назначаем поля
     fieldAssignments.forEach(assignment => {
       if (assignment.assignedColumn !== null && !hiddenColumns.has(assignment.assignedColumn)) {
-        const orderIndex = columnOrder.indexOf(assignment.assignedColumn)
-        if (orderIndex !== -1) {
-          const targets = mapping[orderIndex].targetFields
-          if (!targets.includes(assignment.field)) {
-            targets.push(assignment.field)
+        const mappingItem = mapping.find(m => m.sourceIndex === assignment.assignedColumn)
+        if (mappingItem) {
+          if (!mappingItem.targetFields.includes(assignment.field)) {
+            mappingItem.targetFields.push(assignment.field)
           }
-          mapping[orderIndex].enabled = true
+          mappingItem.enabled = true
         }
       }
     })
 
     return mapping
-  }, [columnOrder, fieldAssignments, sampleData, hiddenColumns])
+  }, [columnOrder, fieldAssignments, sampleData, hiddenColumns, savedSplitSettings])
 
   // Применение настроек для редактирования
   const handleApply = useCallback(() => {
@@ -481,19 +558,10 @@ export function ColumnMappingModal({
       return
     }
 
-    if (onApplyAndSave) {
-      const confirmed = window.confirm('Сохранить все расходы с текущим назначением столбцов? Пожалуйста, убедитесь, что данные верны.')
-      if (!confirmed) {
-        return
-      }
-    }
-
     const mapping = createMapping()
-    if (onApplyAndSave) {
-      onApplyAndSave(mapping)
-    }
+    onApply(mapping)
     onClose()
-  }, [createMapping, onApplyAndSave, onClose, fieldAssignments])
+  }, [createMapping, onApply, onClose, fieldAssignments, columnOrder, savedSplitSettings])
 
   // Вычисляем предпросмотр данных в реальном времени с реальным парсингом
   const previewData = useMemo(() => {
@@ -574,16 +642,50 @@ export function ColumnMappingModal({
     })
   }, [sampleData, fieldAssignments, isEditingMode])
 
-  // Сброс к значениям по умолчанию
-  const handleReset = useCallback(() => {
-    if (sampleData.length === 0) return
+  // Удаление сохраненных настроек для текущего формата
+  const handleDeleteSettings = useCallback(() => {
+    if (!currentFormat) {
+      showToast('Не удалось определить формат данных', 'error')
+      return
+    }
 
-    const columnCount = Math.max(...sampleData.map(row => row.length))
+    const formatLabels: Record<string, string> = {
+      csv: 'CSV',
+      xlsx: 'Excel (XLSX)',
+      xls: 'Excel (XLS)',
+      html: 'HTML',
+      clipboard: 'Буфер обмена',
+      unknown: 'Неизвестный формат'
+    }
 
-    setColumnOrder(Array.from({ length: columnCount }, (_, index) => index))
-    setFieldAssignments(createDefaultFieldAssignments())
-    setHiddenColumns(new Set())
-  }, [sampleData])
+    deleteColumnMapping(currentFormat)
+    showToast(`Настройки для формата "${formatLabels[currentFormat]}" удалены`, 'success')
+    onClose()
+  }, [currentFormat, showToast, onClose])
+
+  // Получаем список всех сохраненных форматов
+  const availableFormats = useMemo(() => {
+    const allMappings = loadAllFormatMappings();
+    return Object.keys(allMappings) as Array<'csv' | 'xlsx' | 'xls' | 'html' | 'clipboard' | 'unknown'>;
+  }, []);
+
+  const formatLabels: Record<string, string> = {
+    csv: 'CSV',
+    xlsx: 'Excel (XLSX)',
+    xls: 'Excel (XLS)',
+    html: 'HTML',
+    clipboard: 'Буфер обмена',
+    unknown: 'Неизвестный формат'
+  };
+
+  const formatIcons: Record<string, string> = {
+    csv: '📄',
+    xlsx: '📊',
+    xls: '📊',
+    html: '🌐',
+    clipboard: '📋',
+    unknown: '❓'
+  };
 
   if (sampleData.length === 0) {
     return (
@@ -604,9 +706,10 @@ export function ColumnMappingModal({
   }
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
       title={
         isEditingMode 
           ? "Редактирование сохраненной схемы столбцов" 
@@ -617,20 +720,42 @@ export function ColumnMappingModal({
       size="lg"
     >
       <div className="space-y-6">
-        {/* Информация о режиме редактирования */}
-        {isEditingMode && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <span className="text-sm text-blue-800 font-medium">
-                Режим редактирования сохраненной схемы
-              </span>
+        {/* Индикатор формата данных */}
+        {currentFormat && onFormatChange && (
+          <div className="flex items-center justify-between p-2 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg min-h-[44px]">
+            <div className="flex items-center gap-3 w-full">
+              <div className="flex items-center gap-2 min-w-[140px]">
+                <span className="text-base">{formatIcons[currentFormat]}</span>
+                <span className="text-xs text-gray-700 min-w-[110px]">
+                  <span className="font-medium text-indigo-700">{formatLabels[currentFormat]}</span>
+                </span>
+              </div>
+              {availableFormats.length > 0 && (
+                <div className="flex items-center gap-1 pl-3 border-l border-indigo-300 flex-1">
+                  <span className="text-[10px] text-gray-600 whitespace-nowrap">Сохранено:</span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {availableFormats.map(format => (
+                      <span
+                        key={format}
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded whitespace-nowrap ${
+                          format === currentFormat
+                            ? 'bg-indigo-600 text-white font-medium'
+                            : 'bg-indigo-100 text-indigo-700 cursor-pointer hover:bg-indigo-200'
+                        }`}
+                        onClick={() => format !== currentFormat && onFormatChange(format)}
+                        title={format === currentFormat ? 'Текущий' : `Переключиться на ${formatLabels[format]}`}
+                      >
+                        <span>{formatIcons[format]}</span>
+                        <span>{formatLabels[format]}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-blue-700 mt-1">
-              Изменения будут сохранены и применены к будущим массовым вводам
-            </p>
           </div>
         )}
+
 
         {/* Таблица с данными и кликабельными заголовками */}
         <div className="mb-8">
@@ -672,7 +797,7 @@ export function ColumnMappingModal({
                         const isOpen = openColumnPicker === originalIndex
 
                         return (
-                          <th key={originalIndex} className="p-2 align-top">
+                          <th key={originalIndex} className="p-2 align-top" style={{ minWidth: '180px', width: '180px' }}>
                             <div
                               className="flex flex-col items-center gap-2"
                               ref={node => {
@@ -683,8 +808,21 @@ export function ColumnMappingModal({
                                 }
                               }}
                             >
-                              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                {columnLabel}
+                              <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                <span>{columnLabel}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleColumnHidden(originalIndex)
+                                  }}
+                                  className="relative group"
+                                  title="Скрыть столбец"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 hover:text-gray-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                  </svg>
+                                </button>
                               </div>
                               <div className="w-full max-w-[240px]">
                                 <button
@@ -695,7 +833,7 @@ export function ColumnMappingModal({
                                     )
                                   }
                                   aria-expanded={isOpen}
-                                  className={`flex w-full items-center justify-between rounded-md border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                  className={`flex w-full h-[32px] items-center justify-between rounded-md border px-3 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                                     assignedFields.length > 0
                                       ? 'border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-700'
                                       : 'border-dashed border-gray-300 bg-white text-gray-400 hover:border-blue-300 hover:text-blue-600'
@@ -731,88 +869,94 @@ export function ColumnMappingModal({
                                           width: pickerPosition.width
                                         }}
                                       >
-                                        <div className="max-h-56 overflow-y-auto p-2 space-y-1">
-                                          {COLUMN_FIELD_OPTIONS.map(option => {
+                                        <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                          {COLUMN_FIELD_OPTIONS.filter(option => {
+                                            // Скрываем уже выбранные для этого столбца поля
+                                            if (assignedFields.includes(option.field)) {
+                                              return false;
+                                            }
+                                            // Скрываем поля, назначенные другим столбцам
                                             const fieldMeta = fieldAssignments.find(item => item.field === option.field)
-                                            const isChecked = assignedFields.includes(option.field)
-                                            const isRequired = Boolean(fieldMeta?.required) && fieldMeta?.assignedColumn === null
                                             const assignedColumnIndex = fieldMeta?.assignedColumn
                                             const isAssignedElsewhere =
                                               typeof assignedColumnIndex === 'number' &&
                                               assignedColumnIndex !== originalIndex
-                                            const assignedDisplayLabel =
-                                              isAssignedElsewhere && typeof assignedColumnIndex === 'number'
-                                                ? getColumnDisplayLabel(assignedColumnIndex)
-                                                : null
+                                            return !isAssignedElsewhere;
+                                          }).map(option => {
+                                            const fieldMeta = fieldAssignments.find(item => item.field === option.field)
+                                            const isChecked = assignedFields.includes(option.field)
+                                            const isRequired = Boolean(fieldMeta?.required) && fieldMeta?.assignedColumn === null
 
                                             return (
-                                              <label
+                                              <button
                                                 key={option.field}
-                                                className="flex items-start gap-2 rounded-md px-2 py-1 text-xs hover:bg-gray-50"
+                                                type="button"
+                                                onClick={() => toggleFieldForColumn(option.field, originalIndex)}
+                                                className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-colors w-full text-left"
                                               >
-                                                <input
-                                                  type="checkbox"
-                                                  checked={isChecked}
-                                                  onChange={() => toggleFieldForColumn(option.field, originalIndex)}
-                                                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                />
-                                                <div className="flex flex-col">
-                                                  <span className="flex items-center gap-2 text-gray-700">
-                                                    <span aria-hidden>{option.icon}</span>
-                                                    <span>{option.label}</span>
-                                                  </span>
-                                                  {isAssignedElsewhere && assignedDisplayLabel && (
-                                                    <span className="pl-6 text-[11px] text-amber-600">
-                                                      Уже назначено: {assignedDisplayLabel}
-                                                    </span>
-                                                  )}
-                                                  {isRequired && (
-                                                    <span className="pl-6 text-[11px] text-red-600">
-                                                      Обязательное поле
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </label>
+                                                <span aria-hidden>{option.icon}</span>
+                                                <span>{option.label}</span>
+                                              </button>
                                             )
                                           })}
-                                        </div>
-                                        <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-600">
-                                          <button
-                                            type="button"
-                                            onClick={() => toggleColumnHidden(originalIndex)}
-                                            className="flex items-center gap-2 text-left text-gray-700 hover:text-blue-600"
-                                          >
-                                            <span aria-hidden>{hiddenColumns.has(originalIndex) ? '👀' : '🙈'}</span>
-                                            <span>
-                                              {hiddenColumns.has(originalIndex)
-                                                ? 'Показать столбец'
-                                                : 'Скрыть столбец'}
-                                            </span>
-                                          </button>
-                                          <p className="mt-1 text-[11px] text-gray-400">
-                                            Скрытые столбцы не будут мешать, вы всегда можете вернуть их ниже.
-                                          </p>
+                                          {COLUMN_FIELD_OPTIONS.filter(option => {
+                                            if (assignedFields.includes(option.field)) {
+                                              return false;
+                                            }
+                                            const fieldMeta = fieldAssignments.find(item => item.field === option.field)
+                                            const assignedColumnIndex = fieldMeta?.assignedColumn
+                                            const isAssignedElsewhere =
+                                              typeof assignedColumnIndex === 'number' &&
+                                              assignedColumnIndex !== originalIndex
+                                            return !isAssignedElsewhere;
+                                          }).length === 0 && (
+                                            <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                                              Все доступные поля выбраны
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     ),
                                     document.body
                                   )
                                 : null}
-                              <div className="flex min-h-[24px] flex-col items-center gap-2">
+                              <div className="flex min-h-[36px] flex-col items-center gap-2 justify-center">
                                 {assignedFields.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setOpenColumnPicker(null)
-                                      setCheckingColumn(originalIndex)
-                                    }}
-                                    className="rounded bg-orange-100 px-2 py-1 text-[11px] font-medium text-orange-700 hover:bg-orange-200 transition-colors"
-                                  >
-                                    🔍 Проверить
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <div className="relative">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setOpenColumnPicker(null)
+                                          // Загружаем сохраненные настройки если они есть
+                                          const saved = savedSplitSettings[originalIndex]
+                                          if (saved) {
+                                            setSplitSettings({ ...saved })
+                                          } else {
+                                            setSplitSettings({ separator: ' ', customSeparator: '', parts: {} })
+                                          }
+                                          setCheckingColumn(originalIndex)
+                                        }}
+                                        className={`rounded bg-orange-100 px-2 py-1 text-[11px] font-medium text-orange-700 hover:bg-orange-200 transition-all hover:scale-105 h-[26px] flex items-center ${
+                                          !checkedColumns.has(originalIndex) && !savedSplitSettings[originalIndex] ? 'ring-2 ring-orange-400 ring-offset-1 animate-[pulse_3s_ease-in-out_infinite]' : ''
+                                        }`}
+                                      >
+                                        🔍 Проверить
+                                      </button>
+                                      {!checkedColumns.has(originalIndex) && !savedSplitSettings[originalIndex] && (
+                                        <span className="absolute -top-2 -right-2 flex h-3 w-3">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+                                        </span>
+                                      )}
+                                    </div>
+                                    {checkedColumns.has(originalIndex) && (
+                                      <span className="text-green-600 text-sm" title="Проверено">✓</span>
+                                    )}
+                                  </div>
                                 )}
-                                <div className="flex flex-wrap justify-center gap-1">
+                                <div className="flex flex-col items-center gap-1 min-h-[60px] justify-center">
                                   {assignedFields.length > 0 ? (
                                     <>
                                       {assignedFields.length > 1 && (
@@ -823,10 +967,21 @@ export function ColumnMappingModal({
                                       {assignedFields.map(field => (
                                         <span
                                           key={field}
-                                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${FIELD_COLORS[field]}`}
+                                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${FIELD_COLORS[field]} group`}
                                         >
                                           <span aria-hidden>{FIELD_ICONS[field]}</span>
                                           <span>{FIELD_LABELS[field]}</span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              toggleFieldForColumn(field, originalIndex)
+                                            }}
+                                            className="ml-1 flex items-center justify-center h-3.5 w-3.5 rounded-full hover:bg-black/10 transition-colors"
+                                            title="Удалить"
+                                          >
+                                            <span className="text-xs leading-none">✕</span>
+                                          </button>
                                         </span>
                                       ))}
                                     </>
@@ -845,8 +1000,10 @@ export function ColumnMappingModal({
                     {sampleData.slice(0, 5).map((row, rowIndex) => (
                       <tr key={rowIndex} className="border-b hover:bg-gray-50">
                         {visibleColumnOrder.map(originalIndex => (
-                          <td key={originalIndex} className="px-4 py-3 text-gray-900 whitespace-nowrap">
-                            {row[originalIndex] || '—'}
+                          <td key={originalIndex} className="px-4 py-3 text-gray-900 whitespace-nowrap" style={{ minWidth: '180px', width: '180px', maxWidth: '180px' }}>
+                            <div className="overflow-hidden text-ellipsis">
+                              {row[originalIndex] || '—'}
+                            </div>
                           </td>
                         ))}
                       </tr>
@@ -860,8 +1017,14 @@ export function ColumnMappingModal({
               </div>
             )}
             {sampleData.length > 5 && visibleColumnOrder.length > 0 && (
-              <div className="px-4 py-2 bg-gray-50 text-sm text-gray-600 text-center">
-                ... и еще {sampleData.length - 5} записей
+              <div className="px-4 py-2 bg-gray-50 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="w-full text-sm text-indigo-600 hover:text-indigo-800 font-medium hover:underline transition-colors"
+                >
+                  📊 Показать все записи ({sampleData.length} строк)
+                </button>
               </div>
             )}
           </div>
@@ -928,11 +1091,6 @@ export function ColumnMappingModal({
               <div className="flex items-center gap-2">
                 <span className="text-lg" aria-hidden>🔬</span>
                 <h3 className="text-sm font-semibold text-gray-800">Тестовая строка (детальный разбор)</h3>
-                <Tooltip content="Подробный анализ того, как будет обработана выбранная строка ваших данных">
-                  <div className="w-4 h-4 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs cursor-help">
-                    ?
-                  </div>
-                </Tooltip>
               </div>
               <div className="flex items-center gap-2">
                 <label htmlFor="test-row-select" className="text-xs text-gray-700">Строка:</label>
@@ -948,6 +1106,14 @@ export function ColumnMappingModal({
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTestRow(Math.floor(Math.random() * sampleData.length))}
+                  className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 transition-colors"
+                  title="Выбрать случайную строку"
+                >
+                  🎲
+                </button>
               </div>
             </div>
             <div className="space-y-2">
@@ -957,7 +1123,24 @@ export function ColumnMappingModal({
 
                 const columnLabel = getColumnDisplayLabel(originalIndex)
                 const rawValue = sampleData[selectedTestRow]?.[originalIndex] || ''
-                const preview = previewData[selectedTestRow]
+                
+                // Проверяем есть ли сохраненные настройки разделения для этого столбца
+                const columnSplitSettings = savedSplitSettings[originalIndex]
+                let preview: Record<string, string> = {}
+                
+                if (columnSplitSettings && Object.keys(columnSplitSettings.parts).length > 0) {
+                  // Применяем кастомное разделение
+                  preview = applyCustomSplit(
+                    rawValue,
+                    assignedFields,
+                    columnSplitSettings.separator,
+                    columnSplitSettings.customSeparator,
+                    columnSplitSettings.parts
+                  )
+                } else {
+                  // Используем стандартный парсинг
+                  preview = previewData[selectedTestRow] || {}
+                }
 
                 return (
                   <div key={originalIndex} className="rounded-md bg-white border border-amber-200 p-3 text-xs">
@@ -992,80 +1175,14 @@ export function ColumnMappingModal({
           </div>
         )}
 
-        {/* Предпросмотр результата */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="font-medium text-gray-900">Предпросмотр результата</h3>
-            <Tooltip content="Посмотрите как будут обработаны ваши данные с текущими настройками">
-              <div className="w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center text-xs cursor-help">
-                ?
-              </div>
-            </Tooltip>
-          </div>
-          
-          {previewData.length > 0 ? (
-            <div className="bg-white border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">💰 Сумма</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📝 Описание</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📍 Город</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📅 Дата</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">⏰ Время</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📋 Примечания</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewData.slice(0, 5).map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-green-700 whitespace-nowrap">
-                          {row.amount || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-blue-700 whitespace-nowrap">
-                          {row.description || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-indigo-700 whitespace-nowrap">
-                          {row.city || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-purple-700 whitespace-nowrap">
-                          {row.expense_date || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-teal-700 whitespace-nowrap">
-                          {row.expense_time || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-yellow-700 whitespace-nowrap">
-                          {row.notes || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {previewData.length > 5 && (
-                <div className="px-4 py-2 bg-gray-50 text-sm text-gray-600 text-center">
-                  ... и еще {previewData.length - 5} записей
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-center space-x-2">
-                <div className="text-yellow-600">⚠️</div>
-                <div className="text-sm text-yellow-800">
-                  Назначьте хотя бы поля &quot;Сумма&quot; и &quot;Описание&quot; для предпросмотра данных
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Модальное окно проверки комбинации */}
         {checkingColumn !== null && (() => {
           const assignedFields = getAssignedFields(checkingColumn)
           const columnLabel = getColumnDisplayLabel(checkingColumn)
           const description = getCombinationDescription(assignedFields)
+          
+          // Сохраненные настройки для этого столбца
+          const savedSettings = savedSplitSettings[checkingColumn]
           
           // Пример для демонстрации разделения
           const sampleCellValue = exampleSource === 'manual' 
@@ -1128,6 +1245,33 @@ export function ColumnMappingModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Показываем сохраненный пример если есть */}
+                {savedSettings && (
+                  <div className="rounded-lg bg-green-50 border border-green-200 p-2.5">
+                    <div className="flex items-start gap-2">
+                      <span className="text-base" aria-hidden>💾</span>
+                      <div className="flex-1 space-y-1">
+                        <div className="text-xs font-semibold text-gray-800">Сохраненная настройка разделения</div>
+                        <div className="text-xs text-gray-600">
+                          Разделитель: <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-green-300">
+                            {savedSettings.separator === 'custom' 
+                              ? `"${savedSettings.customSeparator}"` 
+                              : savedSettings.separator === ' ' ? 'Пробел' : `"${savedSettings.separator}"`}
+                          </span>
+                        </div>
+                        {/* Показываем сохраненный пример */}
+                        {savedSettings.example && (
+                          <div className="text-xs text-gray-600">
+                            Пример: <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-green-300 break-all">
+                              {savedSettings.example}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-lg bg-blue-50 border border-blue-200 p-2.5">
                   <div className="flex items-center gap-2 mb-2">
@@ -1409,9 +1553,29 @@ export function ColumnMappingModal({
                 <div className="flex justify-end pt-3">
                   <Button
                     variant="primary"
-                    onClick={() => setCheckingColumn(null)}
+                    onClick={() => {
+                      if (checkingColumn !== null) {
+                        setCheckedColumns(prev => new Set(prev).add(checkingColumn))
+                        // Сохраняем настройки разделения для этого столбца
+                        if (Object.keys(splitSettings.parts).length > 0) {
+                          // Получаем текущий пример из окна проверки
+                          const currentExample = exampleSource === 'manual' 
+                            ? manualExample 
+                            : (sampleData[exampleRowIndex]?.[checkingColumn] || '')
+                          
+                          setSavedSplitSettings(prev => ({
+                            ...prev,
+                            [checkingColumn]: { 
+                              ...splitSettings,
+                              example: currentExample // Сохраняем пример строки
+                            }
+                          }))
+                        }
+                      }
+                      setCheckingColumn(null)
+                    }}
                   >
-                    Закрыть
+                    Применить
                   </Button>
                 </div>
               </div>
@@ -1422,20 +1586,22 @@ export function ColumnMappingModal({
         {/* Кнопки действий */}
         <div className="flex justify-between items-center pt-6 border-t">
           <div className="flex space-x-3">
-            <Tooltip content="Вернуть настройки к значениям по умолчанию">
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                className="text-gray-600"
-              >
-                🔄 Сбросить
-              </Button>
-            </Tooltip>
+            {currentFormat && (
+              <Tooltip content={`Удалить сохраненные настройки для формата ${formatLabels[currentFormat]}`}>
+                <Button
+                  variant="outline"
+                  onClick={handleDeleteSettings}
+                  className="text-red-600 hover:bg-red-50 hover:border-red-300"
+                >
+                  🗑️ Удалить настройки
+                </Button>
+              </Tooltip>
+            )}
           </div>
           
           <div className="flex space-x-3">
             <Button
-              variant="outline"
+              variant="danger"
               onClick={onClose}
             >
               Отмена
@@ -1444,7 +1610,7 @@ export function ColumnMappingModal({
             {isEditingMode ? (
               <Tooltip content="Сохранить новые настройки столбцов">
                 <Button
-                  variant="primary"
+                  variant="success"
                   onClick={handleApply}
                 >
                   ✅ Применить новые настройки
@@ -1452,32 +1618,38 @@ export function ColumnMappingModal({
               </Tooltip>
             ) : (
               <>
-                <Tooltip content="Применить настройки и продолжить редактирование">
-                  <Button
-                    variant="outline"
-                    onClick={handleApply}
-                    disabled={previewData.length === 0}
-                  >
-                    📝 Применить и редактировать
-                  </Button>
-                </Tooltip>
-                
-                {onApplyAndSave && (
-                  <Tooltip content="Применить настройки и сразу сохранить все расходы">
-                    <Button
-                      variant="primary"
-                      onClick={handleApplyAndSave}
-                      disabled={previewData.length === 0}
-                    >
-                      💾 Применить и сохранить
-                    </Button>
-                  </Tooltip>
-                )}
+                <Button
+                  variant="success"
+                  onClick={handleApply}
+                  disabled={previewData.length === 0}
+                >
+                  Применить
+                </Button>
               </>
             )}
           </div>
         </div>
       </div>
-    </Modal>
+      </Modal>
+      
+      {/* Модалка предпросмотра всех данных */}
+      {isPreviewOpen && sampleData.length > 0 && (
+        <TablePreviewModal
+          isOpen={isPreviewOpen}
+          table={{
+            description: `Все данные (${sampleData.length} строк)`,
+            rows: [
+              // Создаем заголовки как "Столбец A", "Столбец B" и т.д.
+              Array.from({ length: Math.max(...sampleData.map(row => row.length)) }, (_, i) => 
+                getColumnDisplayLabel(i)
+              ),
+              // Затем все данные
+              ...sampleData
+            ]
+          }}
+          onClose={() => setIsPreviewOpen(false)}
+        />
+      )}
+    </>
   )
 }
