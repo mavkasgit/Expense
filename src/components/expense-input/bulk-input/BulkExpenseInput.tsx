@@ -322,10 +322,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
   const handleClearExpenses = useCallback(() => {
     clearAll();
-    clearFileState();
     setSelectedTableMeta(null);
     setValidationErrors({});
-  }, [clearAll, clearFileState, setSelectedTableMeta, setValidationErrors]);
+  }, [clearAll, setSelectedTableMeta, setValidationErrors]);
 
   const handleDirectSave = useCallback(async () => {
     if (expenses.length === 0) {
@@ -484,6 +483,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClearFile={handleClearFile}
+            onConfigureColumns={fileName ? handleOpenColumnMappingWithData : undefined}
           />
         ) : (
           <BulkExpenseTable
