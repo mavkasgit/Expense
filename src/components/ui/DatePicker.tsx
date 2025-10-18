@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, forwardRef } from 'react'
 import { Input } from './Input'
 import { MONTH_NAMES_RU, WEEK_DAYS_RU, formatDateRu, parseDateRu } from '@/lib/utils/dateUtils'
 
@@ -13,18 +13,17 @@ interface DatePickerProps {
   onKeyPress?: (e: React.KeyboardEvent) => void
 }
 
-export function DatePicker({ 
+export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePicker({ 
   value, 
   onChange, 
   disabled = false, 
   className = '',
   placeholder = 'Выберите дату',
   onKeyPress
-}: DatePickerProps) {
+}, ref) {
   const [isOpen, setIsOpen] = useState(false)
   const [displayValue, setDisplayValue] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   // Форматируем дату для отображения (ДД.ММ.ГГГГ)
   useEffect(() => {
@@ -122,7 +121,7 @@ export function DatePicker({
   return (
     <div ref={containerRef} className="relative">
       <Input
-        ref={inputRef}
+        ref={ref}
         type="text"
         value={displayValue}
         onChange={handleInputChange}
@@ -223,4 +222,4 @@ export function DatePicker({
       )}
     </div>
   )
-}
+})

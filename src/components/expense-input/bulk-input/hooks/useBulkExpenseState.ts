@@ -21,6 +21,11 @@ function createEmptyRow(): BulkExpenseRowData {
 export function useBulkExpenseState() {
   const [expenses, setExpenses] = useState<BulkExpenseRowData[]>([]);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+
+  const toggleShowErrorsOnly = useCallback(() => {
+    setShowErrorsOnly(prev => !prev);
+  }, []);
 
   const addRow = useCallback((count = 1) => {
     const newRows = Array.from({ length: count }, createEmptyRow);
@@ -40,20 +45,70 @@ export function useBulkExpenseState() {
     });
   }, []);
 
-  const updateRow = useCallback(<K extends keyof BulkExpenseRowData>(tempId: string, field: K, value: BulkExpenseRowData[K]) => {
-    setExpenses(prev =>
-      prev.map(expense => (expense.tempId === tempId ? { ...expense, [field]: value } : expense))
-    );
-    setValidationErrors(prev => {
-      const key = `${tempId}-${field}`;
-      if (!prev[key]) {
-        return prev;
+  const validateSingleExpense = useCallback((expense: BulkExpenseRowData) => {
+    const errors: Record<string, string> = {};
+    const prefix = expense.tempId || '';
+
+    if (!expense.amount || expense.amount <= 0) {
+      errors[`${prefix}-amount`] = 'Сумма должна быть больше 0';
+    }
+
+    if (!expense.description?.trim()) {
+      errors[`${prefix}-description`] = 'Описание обязательно';
+    }
+
+    if (!expense.expense_date) {
+      errors[`${prefix}-expense_date`] = 'Дата обязательна';
+    }
+
+    if (expense.expense_time && expense.expense_time.trim()) {
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(expense.expense_time.trim())) {
+        errors[`${prefix}-expense_time`] = 'Время должно быть в формате ЧЧ:ММ';
       }
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+    }
+
+    return errors;
   }, []);
+
+  const updateRow = useCallback(<K extends keyof BulkExpenseRowData>(tempId: string, field: K, value: BulkExpenseRowData[K]) => {
+    let updatedExpense: BulkExpenseRowData | null = null;
+    
+    // Обновляем данные сразу
+    setExpenses(prev =>
+      prev.map(expense => {
+        if (expense.tempId === tempId) {
+          updatedExpense = { ...expense, [field]: value };
+          return updatedExpense;
+        }
+        return expense;
+      })
+    );
+
+    // Валидируем асинхронно чтобы не блокировать ввод
+    if (updatedExpense) {
+      const expenseToValidate = updatedExpense;
+      setTimeout(() => {
+        const newErrors = validateSingleExpense(expenseToValidate);
+        
+        setValidationErrors(prev => {
+          const next = { ...prev };
+          
+          // Удаляем старые ошибки для этой строки
+          Object.keys(next).forEach(key => {
+            if (key.startsWith(`${tempId}-`)) {
+              delete next[key];
+            }
+          });
+          
+          // Добавляем новые ошибки для этой строки
+          Object.assign(next, newErrors);
+          
+          return next;
+        });
+      }, 0);
+    }
+  }, [validateSingleExpense]);
 
   const validateExpenses = useCallback(() => {
     const errors: Record<string, string> = {};
@@ -100,6 +155,8 @@ export function useBulkExpenseState() {
     setExpenses,
     validationErrors,
     setValidationErrors,
+    showErrorsOnly,
+    toggleShowErrorsOnly,
     addRow,
     removeRow,
     updateRow,

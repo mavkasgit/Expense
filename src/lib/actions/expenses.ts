@@ -911,3 +911,64 @@ export async function deleteAllExpenses() {
     return { error: 'Произошла ошибка при удалении расходов' }
   }
 }
+
+export async function getExistingCitiesAndDescriptions(): Promise<{
+  cities: Set<string>;
+  descriptions: Set<string>;
+} | { error: string }> {
+  const supabaseClient = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    // Получаем все уникальные города (через city_id)
+    const { data: expensesWithCities, error: citiesError } = await supabaseClient
+      .from('expenses')
+      .select('city_id, cities(name)')
+      .eq('user_id', user.id)
+      .not('city_id', 'is', null)
+
+    if (citiesError) {
+      console.error('Ошибка получения городов:', citiesError)
+      return { error: 'Ошибка получения данных' }
+    }
+
+    // Получаем все уникальные описания
+    const { data: expensesWithDescriptions, error: descriptionsError } = await supabaseClient
+      .from('expenses')
+      .select('description')
+      .eq('user_id', user.id)
+      .not('description', 'is', null)
+
+    if (descriptionsError) {
+      console.error('Ошибка получения описаний:', descriptionsError)
+      return { error: 'Ошибка получения данных' }
+    }
+
+    const cities = new Set<string>()
+    const descriptions = new Set<string>()
+
+    // Собираем уникальные города (нормализуем к нижнему регистру)
+    expensesWithCities?.forEach((expense: any) => {
+      if (expense.cities?.name) {
+        cities.add(expense.cities.name.toLowerCase().trim())
+      }
+    })
+
+    // Собираем уникальные описания (нормализуем к нижнему регистру)
+    expensesWithDescriptions?.forEach((expense: any) => {
+      if (expense.description) {
+        descriptions.add(expense.description.toLowerCase().trim())
+      }
+    })
+
+    return { cities, descriptions }
+  } catch (err) {
+    console.error('Ошибка получения существующих данных:', err)
+    return { error: 'Произошла ошибка при получении данных' }
+  }
+}

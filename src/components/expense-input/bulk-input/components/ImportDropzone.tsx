@@ -16,6 +16,7 @@ interface ImportDropzoneProps {
   onDragLeave: (event: React.DragEvent) => void;
   onDrop: (event: React.DragEvent) => void;
   onClearFile: () => void;
+  onConfigureColumns?: () => void;
 }
 
 export function ImportDropzone({
@@ -30,6 +31,7 @@ export function ImportDropzone({
   onDragLeave,
   onDrop,
   onClearFile,
+  onConfigureColumns,
 }: ImportDropzoneProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -136,20 +138,38 @@ export function ImportDropzone({
                 )}
               </div>
 
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={event => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onBrowse();
-                }}
-                className="flex items-center gap-2"
-              >
-                <span aria-hidden>🔄</span>
-                <span>Заменить файл</span>
-              </Button>
+              <div className="flex items-center gap-3">
+                {onConfigureColumns && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onConfigureColumns();
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <span aria-hidden>📑</span>
+                    <span>Открыть файл</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onBrowse();
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <span aria-hidden>🔄</span>
+                  <span>Заменить файл</span>
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">

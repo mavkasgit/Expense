@@ -138,11 +138,9 @@ export function buildExpensesFromMappedData({
       });
     });
 
-    if (!expenseData.amount || !expenseData.description) {
-      return;
-    }
-
-    const description = expenseData.description.trim();
+    // Убрали раннюю валидацию - теперь импортируем все строки, даже с ошибками
+    // Валидация будет происходить только перед сохранением
+    const description = expenseData.description?.trim() || '';
     const notes = expenseData.notes?.trim() || '';
 
     const providedCity = expenseData.city?.trim() || '';
@@ -159,7 +157,7 @@ export function buildExpensesFromMappedData({
     }
 
     newExpenses.push({
-      amount: expenseData.amount,
+      amount: expenseData.amount || 0, // Если нет суммы, ставим 0 чтобы показать ошибку в UI
       description,
       notes,
       category_id: '',

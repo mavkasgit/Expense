@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { useToast } from '@/hooks/useToast';
 import { useCitySynonyms } from '@/hooks/useCitySynonyms';
 import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions';
-import { createBulkExpenses } from '@/lib/actions/expenses';
+import { createBulkExpenses, getExistingCitiesAndDescriptions } from '@/lib/actions/expenses';
 import { createBankStatement } from '@/lib/actions/bankStatements';
 import type { Category, ColumnMapping, CreateExpenseData } from '@/types';
 import type { BulkExpenseRowData } from '@/lib/validations/expenses';
@@ -15,7 +15,6 @@ import { ReviewModal } from './components/ReviewModal';
 import { TableSelectionModal } from './components/TableSelectionModal';
 import { TablePreviewModal } from './components/TablePreviewModal';
 import { HowToUse } from './components/HowToUse';
-import { BulkImportHeader } from './components/BulkImportHeader';
 import { ImportDropzone } from './components/ImportDropzone';
 import { SelectedTableInfo } from './components/SelectedTableInfo';
 import { useBulkExpenseState } from './hooks/useBulkExpenseState';
@@ -30,6 +29,8 @@ import {
   type DataSourceFormat,
 } from './utils/storage';
 import type { BuildExpensesResult, ReviewModalState } from './types';
+import { BulkImportToolbar } from './components/BulkImportToolbar';
+import { BulkImportFooter } from './components/BulkImportFooter';
 
 interface BulkExpenseInputProps {
   categories: Category[];
@@ -59,6 +60,23 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const [isReviewProcessing, setIsReviewProcessing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [currentFormat, setCurrentFormat] = useState<DataSourceFormat | null>(null);
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+  const [showNewCitiesOnly, setShowNewCitiesOnly] = useState(false);
+  const [showNewDescriptionsOnly, setShowNewDescriptionsOnly] = useState(false);
+  const [existingCities, setExistingCities] = useState<Set<string>>(new Set());
+  const [existingDescriptions, setExistingDescriptions] = useState<Set<string>>(new Set());
+
+  const handleToggleShowErrorsOnly = useCallback(() => {
+    setShowErrorsOnly(prev => !prev);
+  }, []);
+
+  const handleToggleShowNewCitiesOnly = useCallback(() => {
+    setShowNewCitiesOnly(prev => !prev);
+  }, []);
+
+  const handleToggleShowNewDescriptionsOnly = useCallback(() => {
+    setShowNewDescriptionsOnly(prev => !prev);
+  }, []);
 
   const { synonyms: citySynonyms } = useCitySynonyms();
   const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(
@@ -129,6 +147,19 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
   useEffect(() => {
     setIsMounted(true);
+    
+    // Загружаем существующие города и описания
+    const loadExistingData = async () => {
+      const result = await getExistingCitiesAndDescriptions();
+      if ('error' in result) {
+        console.error('Ошибка загрузки существующих данных:', result.error);
+      } else {
+        setExistingCities(result.cities);
+        setExistingDescriptions(result.descriptions);
+      }
+    };
+    
+    loadExistingData();
   }, []);
 
   // Определяем формат при изменении источника данных
@@ -150,6 +181,45 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     const storedMapping = loadSavedColumnMapping(currentFormat);
     setSavedColumnMapping(storedMapping.length > 0 ? storedMapping : null);
   }, [currentFormat]);
+
+  // Валидация теперь происходит автоматически при изменении каждой строки в updateRow
+  // Полная валидация вызывается только при попытке сохранить
+
+  // Подсчет количества строк с ошибками, новыми городами и описаниями с дебаунсом
+  const [counters, setCounters] = useState({ errorsCount: 0, newCitiesCount: 0, newDescriptionsCount: 0 });
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      let errorsCount = 0;
+      let newCitiesCount = 0;
+      let newDescriptionsCount = 0;
+
+      expenses.forEach(expense => {
+        const tempId = expense.tempId || '';
+        
+        // Проверяем есть ли ошибки в этой строке
+        if (Object.keys(validationErrors).some(key => key.startsWith(tempId))) {
+          errorsCount++;
+        }
+
+        // Проверяем новый ли город
+        const cityName = expense.city?.toLowerCase().trim();
+        if (cityName && !existingCities.has(cityName)) {
+          newCitiesCount++;
+        }
+
+        // Проверяем новое ли описание
+        const description = expense.description?.toLowerCase().trim();
+        if (description && !existingDescriptions.has(description)) {
+          newDescriptionsCount++;
+        }
+      });
+
+      setCounters({ errorsCount, newCitiesCount, newDescriptionsCount });
+    }, 300); // Пересчитываем счетчики через 300мс после последнего изменения
+    
+    return () => clearTimeout(timer);
+  }, [expenses, validationErrors, existingCities, existingDescriptions]);
 
   const appendImportStats = useCallback(
     (result: BuildExpensesResult) => {
@@ -444,7 +514,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       <input ref={fileInputRef} type="file" accept="*/*" className="hidden" onChange={handleFileUpload} />
 
       <Card className="space-y-6 p-6">
-        <BulkImportHeader
+        <BulkImportToolbar
           onOpenColumnMapping={handleOpenColumnMappingSettings}
           onOpenColumnMappingWithData={handleOpenColumnMappingWithData}
           onOpenTableSelection={() => setShowTableSelection(true)}
@@ -453,10 +523,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           canChooseTable={Boolean(fileContent && availableTables.length > 1)}
           hasSelectedTable={Boolean(selectedTableMeta || savedTableIndex !== null)}
           hasSavedColumnMapping={Boolean(savedColumnMapping?.length)}
-          hasExpenses={expenses.length > 0}
-          onClear={handleClearExpenses}
-          onDirectSave={handleDirectSave}
-          isSubmitting={isSubmitting}
           hasFileLoaded={Boolean(fileContent)}
           currentFormat={currentFormat}
         />
@@ -496,11 +562,35 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             cityOptions={cityOptions}
             cityLookupById={cityLookupById}
             resolveCityByInput={resolveCityByInput}
+            showErrorsOnly={showErrorsOnly}
+            showNewCitiesOnly={showNewCitiesOnly}
+            showNewDescriptionsOnly={showNewDescriptionsOnly}
+            existingCities={existingCities}
+            existingDescriptions={existingDescriptions}
+            onAddRow={addRow}
           />
         )}
 
         <HowToUse />
       </Card>
+
+      {expenses.length > 0 && (
+        <BulkImportFooter
+          onClear={handleClearExpenses}
+          onDirectSave={handleDirectSave}
+          isSubmitting={isSubmitting}
+          hasExpenses={expenses.length > 0}
+          showErrorsOnly={showErrorsOnly}
+          onToggleShowErrorsOnly={handleToggleShowErrorsOnly}
+          showNewCitiesOnly={showNewCitiesOnly}
+          onToggleShowNewCitiesOnly={handleToggleShowNewCitiesOnly}
+          showNewDescriptionsOnly={showNewDescriptionsOnly}
+          onToggleShowNewDescriptionsOnly={handleToggleShowNewDescriptionsOnly}
+          errorsCount={counters.errorsCount}
+          newCitiesCount={counters.newCitiesCount}
+          newDescriptionsCount={counters.newDescriptionsCount}
+        />
+      )}
 
       <ReviewModal
         reviewState={reviewModalState}
@@ -538,4 +628,3 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     </div>
   );
 }
-

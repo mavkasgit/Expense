@@ -237,6 +237,43 @@ export function ColumnMappingModal({
   // Для случайного выбора строк в проверке данных
   const [dataCheckRowIndices, setDataCheckRowIndices] = useState<number[]>([0, 1])
   const [showOnlyErrors, setShowOnlyErrors] = useState(false)
+  
+  // Состояния для сворачиваемых секций
+  const [isDataSectionCollapsed, setIsDataSectionCollapsed] = useState(() => {
+    // Если есть сохраненные настройки - загружаем состояние из localStorage
+    if (savedMapping && savedMapping.length > 0) {
+      const saved = localStorage.getItem('columnMapping_dataSectionCollapsed')
+      return saved !== null ? saved === 'true' : true // По умолчанию свернуто если есть сохраненные настройки
+    }
+    return false
+  })
+  const [isTestSectionCollapsed, setIsTestSectionCollapsed] = useState(() => {
+    if (savedMapping && savedMapping.length > 0) {
+      const saved = localStorage.getItem('columnMapping_testSectionCollapsed')
+      return saved !== null ? saved === 'true' : true
+    }
+    return false
+  })
+  const [isHiddenSectionCollapsed, setIsHiddenSectionCollapsed] = useState(() => {
+    if (savedMapping && savedMapping.length > 0) {
+      const saved = localStorage.getItem('columnMapping_hiddenSectionCollapsed')
+      return saved !== null ? saved === 'true' : true
+    }
+    return false
+  })
+  
+  // Сохранение состояний секций в localStorage
+  useEffect(() => {
+    localStorage.setItem('columnMapping_dataSectionCollapsed', String(isDataSectionCollapsed))
+  }, [isDataSectionCollapsed])
+  
+  useEffect(() => {
+    localStorage.setItem('columnMapping_testSectionCollapsed', String(isTestSectionCollapsed))
+  }, [isTestSectionCollapsed])
+  
+  useEffect(() => {
+    localStorage.setItem('columnMapping_hiddenSectionCollapsed', String(isHiddenSectionCollapsed))
+  }, [isHiddenSectionCollapsed])
 
   // Автофокус на textarea при переключении на ручной ввод
   useEffect(() => {
@@ -266,6 +303,7 @@ export function ColumnMappingModal({
       separator: string
       customSeparator: string
       parts: Record<string, number>
+      example?: string
     }> = {}
     
     if (savedMapping && savedMapping.length > 0) {
@@ -531,37 +569,21 @@ export function ColumnMappingModal({
 
   // Применение настроек для редактирования
   const handleApply = useCallback(() => {
-    // В режиме редактирования не требуем обязательные поля
-    if (!isEditingMode) {
-      // Проверяем обязательные поля только при обработке данных
-      const amountField = fieldAssignments.find(f => f.field === 'amount')
-      const descriptionField = fieldAssignments.find(f => f.field === 'description')
-      
-      if (!amountField?.assignedColumn || !descriptionField?.assignedColumn) {
-        // В обычном режиме требуем обязательные поля
-        return
-      }
-    }
-
+    // Убрали проверку обязательных полей - импортируем все данные
+    // Валидация будет происходить только перед сохранением
     const mapping = createMapping()
     onApply(mapping)
     onClose()
-  }, [createMapping, onApply, onClose, isEditingMode, fieldAssignments])
+  }, [createMapping, onApply, onClose])
 
   // Применение и прямое сохранение
   const handleApplyAndSave = useCallback(() => {
-    // Проверяем обязательные поля
-    const amountField = fieldAssignments.find(f => f.field === 'amount')
-    const descriptionField = fieldAssignments.find(f => f.field === 'description')
-
-    if (!amountField?.assignedColumn || !descriptionField?.assignedColumn) {
-      return
-    }
-
+    // Убрали проверку обязательных полей - импортируем все данные
+    // Валидация будет происходить только перед сохранением
     const mapping = createMapping()
     onApply(mapping)
     onClose()
-  }, [createMapping, onApply, onClose, fieldAssignments, columnOrder, savedSplitSettings])
+  }, [createMapping, onApply, onClose])
 
   // Вычисляем предпросмотр данных в реальном времени с реальным парсингом
   const previewData = useMemo(() => {
@@ -574,11 +596,7 @@ export function ColumnMappingModal({
     const timeField = fieldAssignments.find(f => f.field === 'expense_time')
     const notesField = fieldAssignments.find(f => f.field === 'notes')
 
-    // В режиме редактирования не требуем обязательные поля для предпросмотра
-    if (!isEditingMode && (amountField?.assignedColumn === null || amountField?.assignedColumn === undefined ||
-        descriptionField?.assignedColumn === null || descriptionField?.assignedColumn === undefined)) {
-      return []
-    }
+    // Убрали проверку обязательных полей - показываем предпросмотр для всех данных
 
     // Обрабатываем каждую строку с реальным парсингом
     return sampleData.map(row => {
@@ -640,7 +658,7 @@ export function ColumnMappingModal({
 
       return result
     })
-  }, [sampleData, fieldAssignments, isEditingMode])
+  }, [sampleData, fieldAssignments])
 
   // Удаление сохраненных настроек для текущего формата
   const handleDeleteSettings = useCallback(() => {
@@ -759,8 +777,14 @@ export function ColumnMappingModal({
 
         {/* Таблица с данными и кликабельными заголовками */}
         <div className="mb-8">
-          <div className="flex items-center justify-between gap-4 mb-2">
+          <div 
+            className="flex items-center justify-between gap-4 mb-2 cursor-pointer hover:bg-gray-50 p-2 rounded -ml-2"
+            onClick={() => setIsDataSectionCollapsed(!isDataSectionCollapsed)}
+          >
             <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-lg transition-transform" style={{ transform: isDataSectionCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                ▼
+              </span>
               <h3 className="font-medium text-gray-900">Ваши данные</h3>
               <Tooltip content="Кликните на заголовок столбца чтобы назначить ему поле">
                 <div className="w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center text-xs cursor-help">
@@ -781,6 +805,7 @@ export function ColumnMappingModal({
             )}
           </div>
 
+          {!isDataSectionCollapsed && (<>
           <p className="mb-3 text-xs text-gray-500">
             Можно выбрать несколько полей для одного столбца — например, одновременно отметить дату и время или описание и город.
           </p>
@@ -1028,8 +1053,9 @@ export function ColumnMappingModal({
               </div>
             )}
           </div>
+          </>)}
 
-          {hiddenColumnOrder.length > 0 && (
+          {!isDataSectionCollapsed && hiddenColumnOrder.length > 0 && (
             <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
               <div 
                 className="flex items-center justify-between cursor-pointer"
@@ -1087,35 +1113,44 @@ export function ColumnMappingModal({
         {/* Тестовая строка - детальный разбор */}
         {previewData.length > 0 && (
           <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-center justify-between mb-3">
+            <div 
+              className="flex items-center justify-between mb-3 cursor-pointer hover:bg-amber-100 -m-2 p-2 rounded"
+              onClick={() => setIsTestSectionCollapsed(!isTestSectionCollapsed)}
+            >
               <div className="flex items-center gap-2">
+                <span className="text-gray-500 text-lg transition-transform" style={{ transform: isTestSectionCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                  ▼
+                </span>
                 <span className="text-lg" aria-hidden>🔬</span>
                 <h3 className="text-sm font-semibold text-gray-800">Тестовая строка (детальный разбор)</h3>
               </div>
-              <div className="flex items-center gap-2">
-                <label htmlFor="test-row-select" className="text-xs text-gray-700">Строка:</label>
-                <select
-                  id="test-row-select"
-                  value={selectedTestRow}
-                  onChange={(e) => setSelectedTestRow(Number(e.target.value))}
-                  className="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-gray-700"
-                >
-                  {sampleData.map((_, index) => (
-                    <option key={index} value={index}>
-                      {index + 1}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTestRow(Math.floor(Math.random() * sampleData.length))}
-                  className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 transition-colors"
-                  title="Выбрать случайную строку"
-                >
-                  🎲
-                </button>
-              </div>
+              {!isTestSectionCollapsed && (
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <label htmlFor="test-row-select" className="text-xs text-gray-700">Строка:</label>
+                  <select
+                    id="test-row-select"
+                    value={selectedTestRow}
+                    onChange={(e) => setSelectedTestRow(Number(e.target.value))}
+                    className="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-gray-700"
+                  >
+                    {sampleData.map((_, index) => (
+                      <option key={index} value={index}>
+                        {index + 1}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTestRow(Math.floor(Math.random() * sampleData.length))}
+                    className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 transition-colors"
+                    title="Выбрать случайную строку"
+                  >
+                    🎲
+                  </button>
+                </div>
+              )}
             </div>
+            {!isTestSectionCollapsed && (
             <div className="space-y-2">
               {visibleColumnOrder.map((originalIndex, idx) => {
                 const assignedFields = getAssignedFields(originalIndex)
@@ -1172,6 +1207,7 @@ export function ColumnMappingModal({
                 )
               })}
             </div>
+            )}
           </div>
         )}
 
