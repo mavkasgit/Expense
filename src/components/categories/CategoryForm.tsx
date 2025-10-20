@@ -15,6 +15,13 @@ interface CategoryFormProps {
   onCancel: () => void
 }
 
+interface GroupOption {
+  value: string;
+  label: string;
+  color?: string;
+  icon?: React.ReactNode;
+}
+
 export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProps) {
   const [formData, setFormData] = useState<CreateCategoryData>({
     name: category?.name || '',
@@ -81,9 +88,7 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
     }
   }
 
-
-
-  const groupOptions = [
+  const groupOptions: GroupOption[] = [
     { value: '', label: 'Без группы' },
     ...groups.map(g => ({
       value: g.id,
@@ -114,11 +119,15 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
       />
 
       <div>
-        <SearchableSelect
+        <SearchableSelect<GroupOption>
           options={groupOptions}
           value={formData.category_group_id || ''}
           onChange={(value) => handleChange('category_group_id', value || null)}
           placeholder="Выберите группу..."
+          getOptionValue={(o) => o.value}
+          getOptionLabel={(o) => o.label}
+          getOptionColor={(o) => o.color}
+          getOptionIcon={(o) => o.icon}
         />
       </div>
 

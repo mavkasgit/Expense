@@ -33,6 +33,13 @@ interface UnrecognizedKeywordsSectionProps {
   onToggleVisibility: () => void
 }
 
+interface CategoryOption {
+  value: string;
+  label: string;
+  color?: string | null;
+  icon?: React.ReactNode;
+}
+
 export function UnrecognizedKeywordsSection({
   categories,
   isVisible,
@@ -63,7 +70,7 @@ export function UnrecognizedKeywordsSection({
   const { showToast } = useToast()
 
   // Форматируем категории для SearchableSelect
-  const categoryOptions = categories.map(category => {
+  const categoryOptions: CategoryOption[] = categories.map(category => {
     const iconEmoji = availableIcons.find(i => i.key === category.icon)?.emoji || '📦'
     return {
       value: category.id,
@@ -82,11 +89,9 @@ export function UnrecognizedKeywordsSection({
 
   // Загружаем неопознанные ключевые слова
   useEffect(() => {
-    if (isVisible) {
-      loadUnrecognizedKeywords()
-      loadExistingKeywords()
-    }
-  }, [isVisible]) // eslint-disable-line react-hooks/exhaustive-deps
+    loadUnrecognizedKeywords()
+    loadExistingKeywords()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadUnrecognizedKeywords = async () => {
     setIsLoading(true)
@@ -494,12 +499,6 @@ export function UnrecognizedKeywordsSection({
     setEditValue('')
   }
 
-
-
-  if (keywords.length === 0 && !isLoading) {
-    return null // Не показываем секцию если нет неопознанных ключевых слов
-  }
-
   return (
     <div className="mb-6 bg-white rounded-lg shadow-sm overflow-hidden border-2 border-orange-200">
       <div 
@@ -546,6 +545,10 @@ export function UnrecognizedKeywordsSection({
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                 <p className="text-sm text-gray-600 mt-2">Загрузка...</p>
               </div>
+            ) : keywords.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-600">🎉 Все ключевые слова распознаны!</p>
+              </div>
             ) : (
               <>
 
@@ -565,10 +568,14 @@ export function UnrecognizedKeywordsSection({
                         placeholder="Введите ключевое слово"
                         className="text-sm h-8"
                       />
-                      <SearchableSelect
+                      <SearchableSelect<CategoryOption>
                         options={categoryOptions}
                         value={newKeywordCategoryId}
                         onChange={(value) => setNewKeywordCategoryId(value || '')}
+                        getOptionValue={(o) => o.value}
+                        getOptionLabel={(o) => o.label}
+                        getOptionColor={(o) => o.color}
+                        getOptionIcon={(o) => o.icon}
                         placeholder="Выберите категорию"
                         size="sm"
                       />
@@ -717,10 +724,14 @@ export function UnrecognizedKeywordsSection({
                               {getKeywordAction(keyword.id) === 'new' && (
                                 <div className="space-y-1">
                                   <div className="h-10">
-                                    <SearchableSelect
+                                    <SearchableSelect<CategoryOption>
                                       options={categoryOptions}
                                       value={getKeywordCategory(keyword.id)}
                                       onChange={(value) => setKeywordCategory(keyword.id, value || '')}
+                                      getOptionValue={(o) => o.value}
+                                      getOptionLabel={(o) => o.label}
+                                      getOptionColor={(o) => o.color}
+                                      getOptionIcon={(o) => o.icon}
                                       placeholder="Выберите категорию"
                                       size="sm"
                                     />
@@ -744,18 +755,17 @@ export function UnrecognizedKeywordsSection({
                               {getKeywordAction(keyword.id) === 'synonym' && (
                                 <div className="space-y-1">
                                   <div className="h-10">
-                                    <SearchableSelect
-                                      options={existingKeywords.map(kw => {
-                                        const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
-                                        return {
-                                          value: kw.id,
-                                          label: `${kw.keyword} (${kw.categories?.name || 'Без категории'})`,
-                                          color: kw.categories?.color || '#6366f1',
-                                          icon: <span className="mr-2 text-base">{iconEmoji}</span>
-                                        }
-                                      })}
+                                    <SearchableSelect<CategoryKeywordWithDetails>
+                                      options={existingKeywords}
                                       value={getKeywordExistingId(keyword.id)}
                                       onChange={(value) => setKeywordExistingId(keyword.id, value || '')}
+                                      getOptionValue={(kw) => kw.id}
+                                      getOptionLabel={(kw) => `${kw.keyword} (${kw.categories?.name || 'Без категории'})`}
+                                      getOptionColor={(kw) => kw.categories?.color}
+                                      getOptionIcon={(kw) => {
+                                        const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
+                                        return <span className="mr-2 text-base">{iconEmoji}</span>
+                                      }}
                                       placeholder="Выберите ключевое слово"
                                       size="sm"
                                     />
@@ -844,28 +854,31 @@ export function UnrecognizedKeywordsSection({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-blue-800">Создать как новые слова:</label>
-                        <SearchableSelect
+                        <SearchableSelect<CategoryOption>
                           options={categoryOptions}
                           value={bulkNewCategoryId}
                           onChange={(categoryId) => setBulkNewCategoryId(categoryId || '')}
+                          getOptionValue={(o) => o.value}
+                          getOptionLabel={(o) => o.label}
+                          getOptionColor={(o) => o.color}
+                          getOptionIcon={(o) => o.icon}
                           placeholder="Выберите категорию"
                           size="sm"
                         />
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-blue-800">Добавить как синонимы:</label>
-                        <SearchableSelect
-                          options={existingKeywords.map(kw => {
-                            const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
-                            return {
-                              value: kw.id,
-                              label: `${kw.keyword} (${kw.categories?.name || 'Без категории'})`,
-                              color: kw.categories?.color || '#6366f1',
-                              icon: <span className="mr-2 text-base">{iconEmoji}</span>
-                            }
-                          })}
+                        <SearchableSelect<CategoryKeywordWithDetails>
+                          options={existingKeywords}
                           value={bulkSynonymKeywordId}
                           onChange={(keywordId) => setBulkSynonymKeywordId(keywordId || '')}
+                          getOptionValue={(kw) => kw.id}
+                          getOptionLabel={(kw) => `${kw.keyword} (${kw.categories?.name || 'Без категории'})`}
+                          getOptionColor={(kw) => kw.categories?.color}
+                          getOptionIcon={(kw) => {
+                            const iconEmoji = availableIcons.find(i => i.key === kw.categories?.icon)?.emoji || '📦'
+                            return <span className="mr-2 text-base">{iconEmoji}</span>
+                          }}
                           placeholder="Выберите ключевое слово"
                           size="sm"
                         />

@@ -2,17 +2,14 @@
 export function extractKeywords(description: string): string[] {
   if (!description) return []
   
-  // Простое извлечение ключевых слов
-  // Удаляем знаки препинания, приводим к нижнему регистру, разбиваем на слова
-  const words = description
-    .toLowerCase()
-    .replace(/[^\w\s\u0400-\u04FF]/g, '') // оставляем только буквы, цифры, пробелы и кириллицу
-    .split(/\s+/)
-    .filter(word => word.length > 2) // исключаем слишком короткие слова
-    .filter(word => !isStopWord(word)) // исключаем стоп-слова
+  const cleanedDescription = description.trim()
+
+  if (cleanedDescription.length === 0) {
+    return []
+  }
   
-  // Удаляем дубликаты
-  return [...new Set(words)]
+  // Возвращаем всё описание как одно "ключевое слово"
+  return [cleanedDescription]
 }
 
 // Стоп-слова (можно расширить)

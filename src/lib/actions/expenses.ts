@@ -403,12 +403,15 @@ export async function deleteExpense(id: string) {
 }
 
 export async function getExpenses(filters?: {
-  category_id?: string
+  categoryId?: string
   status?: string
-  date_from?: string
-  date_to?: string
+  dateFrom?: string
+  dateTo?: string
   limit?: number
   offset?: number
+  search?: string
+  cityId?: string
+  sortBy?: string
 }) {
   const supabaseClient = await createServerClient()
 
@@ -431,25 +434,44 @@ export async function getExpenses(filters?: {
       .eq('user_id', user.id)
 
     // Применяем фильтры
-    if (filters?.category_id) {
-      query = query.eq('category_id', filters.category_id)
+    if (filters?.categoryId) {
+      query = query.eq('category_id', filters.categoryId)
+    }
+
+    if (filters?.cityId) {
+      query = query.eq('city_id', filters.cityId)
     }
 
     if (filters?.status) {
       query = query.eq('status', filters.status)
     }
 
-    if (filters?.date_from) {
-      query = query.gte('expense_date', filters.date_from)
+    if (filters?.dateFrom) {
+      query = query.gte('expense_date', filters.dateFrom)
     }
 
-    if (filters?.date_to) {
-      query = query.lte('expense_date', filters.date_to)
+    if (filters?.dateTo) {
+      query = query.lte('expense_date', filters.dateTo)
     }
 
-    // Сортировка по дате (новые сначала)
-    query = query.order('expense_date', { ascending: false })
-    query = query.order('created_at', { ascending: false })
+    if (filters?.search) {
+      const searchTerm = `%${filters.search}%`
+      query = query.or(`description.ilike.${searchTerm},notes.ilike.${searchTerm}`)
+    }
+
+    // Сортировка
+    const sortBy = filters?.sortBy || 'date_desc';
+    
+    if (sortBy === 'date_asc') {
+      query = query.order('expense_date', { ascending: true });
+    } else if (sortBy === 'amount_asc') {
+      query = query.order('amount', { ascending: true });
+    } else if (sortBy === 'amount_desc') {
+      query = query.order('amount', { ascending: false });
+    } else {
+      // По умолчанию date_desc
+      query = query.order('expense_date', { ascending: false });
+    }
 
     // Пагинация
     if (filters?.limit) {
@@ -619,6 +641,8 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
+    const { saveBulkUnrecognizedKeywords } = await import('./keywords')
+
     // Функция быстрой категоризации в памяти
     const categorizeBulk = (description: string) => {
       if (!keywords || !description) {
@@ -664,6 +688,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     const errors: Array<{ row: number; message: string }> = []
     
     const unrecognizedCounters = new Map<string, { name: string; count: number }>()
+    const uncategorizedDescriptions: string[] = []
 
     for (let i = 0; i < expenses.length; i++) {
       const expense = expenses[i]
@@ -686,6 +711,10 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
           finalCategoryId = categorizationResult.category_id
           matchedKeywords = categorizationResult.matched_keywords
           autoCategorized = categorizationResult.auto_categorized
+
+          if (!finalCategoryId) {
+            uncategorizedDescriptions.push(validatedData.description)
+          }
         }
 
         // Определяем статус расхода
@@ -770,6 +799,10 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       await Promise.all(
         Array.from(unrecognizedCounters.values()).map(entry => rememberUnrecognizedCity(entry.name, entry.count))
       )
+    }
+
+    if (uncategorizedDescriptions.length > 0) {
+      await saveBulkUnrecognizedKeywords(uncategorizedDescriptions)
     }
 
     // Подсчитываем статистику
@@ -970,5 +1003,51 @@ export async function getExistingCitiesAndDescriptions(): Promise<{
   } catch (err) {
     console.error('Ошибка получения существующих данных:', err)
     return { error: 'Произошла ошибка при получении данных' }
+  }
+}
+
+export async function getExpensesDateRange(): Promise<{ min: string; max: string } | { error: string }> {
+  const supabaseClient = await createServerClient()
+
+  try {
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    const [minDateRes, maxDateRes] = await Promise.all([
+      supabaseClient
+        .from('expenses')
+        .select('expense_date')
+        .eq('user_id', user.id)
+        .order('expense_date', { ascending: true })
+        .limit(1),
+      supabaseClient
+        .from('expenses')
+        .select('expense_date')
+        .eq('user_id', user.id)
+        .order('expense_date', { ascending: false })
+        .limit(1)
+    ]) as [{ data: { expense_date: string }[] | null; error: any }, { data: { expense_date: string }[] | null; error: any }]
+
+    if (minDateRes.error || maxDateRes.error) {
+      console.error('Ошибка получения диапазона дат:', minDateRes.error || maxDateRes.error)
+      return { error: 'Не удалось получить диапазон дат' }
+    }
+
+    if (minDateRes.data && minDateRes.data.length > 0 && maxDateRes.data && maxDateRes.data.length > 0) {
+      return {
+        min: minDateRes.data[0].expense_date,
+        max: maxDateRes.data[0].expense_date
+      }
+    }
+
+    // Fallback for no expenses
+    const today = new Date().toISOString().split('T')[0]
+    return { min: today, max: today }
+
+  } catch (err) {
+    console.error('Ошибка получения диапазона дат:', err)
+    return { error: 'Произошла ошибка' }
   }
 }

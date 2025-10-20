@@ -29,6 +29,13 @@ interface ExpenseEditModalProps {
   onSuccess?: (updatedExpense: any) => void
 }
 
+interface CategoryOption {
+  value: string;
+  label: string;
+  color?: string | null;
+  icon?: React.ReactNode;
+}
+
 export function ExpenseEditModal({
   expense,
   categories,
@@ -363,7 +370,7 @@ export function ExpenseEditModal({
   }
 
   // Опции категорий для селекта с иконками и цветами
-  const categoryOptions = [
+  const categoryOptions: CategoryOption[] = [
     { 
       value: '', 
       label: 'Без категории',
@@ -483,10 +490,14 @@ export function ExpenseEditModal({
           <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
             Категория
           </label>
-          <SearchableSelect
+          <SearchableSelect<CategoryOption>
             options={categoryOptions}
             value={formData.category_id}
             onChange={(value) => handleFieldChange('category_id', value)}
+            getOptionValue={(o) => o.value}
+            getOptionLabel={(o) => o.label}
+            getOptionColor={(o) => o.color}
+            getOptionIcon={(o) => o.icon}
             placeholder="Выберите категорию..."
             disabled={isPending}
           />

@@ -30,19 +30,20 @@ export function GroupsManager({
 }: GroupsManagerProps) {
   return (
     <SortableContext items={groups.map(g => g.id)} strategy={rectSortingStrategy}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="flex flex-wrap gap-4">
         {groups.map(group => (
-          <CategoryGroup
-            key={group.id}
-            group={group}
-            onEditGroup={handleEditGroup}
-            onDeleteGroup={handleDeleteGroup}
-            onEditCategory={handleEditCategory}
-            onKeywordsCategory={handleKeywordsCategory}
-            onDeleteCategory={handleDeleteCategory}
-            activeCategory={activeCategory}
-            isGroupDragging={isGroupDragging}
-          />
+          <div key={group.id} className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.667rem)] xl:w-[calc(25%-0.75rem)]">
+            <CategoryGroup
+              group={group}
+              onEditGroup={handleEditGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onEditCategory={handleEditCategory}
+              onKeywordsCategory={handleKeywordsCategory}
+              onDeleteCategory={handleDeleteCategory}
+              activeCategory={activeCategory}
+              isGroupDragging={isGroupDragging}
+            />
+          </div>
         ))}
       </div>
     </SortableContext>

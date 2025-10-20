@@ -196,9 +196,8 @@ export function BackupPageContent() {
           <h2 className="text-xl font-semibold mb-4">Создание резервной копии</h2>
           <p className="text-gray-600 mb-6">Создайте полную резервную копию всех ваших данных. Файл будет автоматически скачан в формате JSON.</p>
           {isLoadingStats ? (
-            <div className="bg-gray-50 p-4 rounded-lg mb-6 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded mb-2 w-3/4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            <div className="bg-gray-50 p-4 rounded-lg mb-6 flex items-center justify-center h-24">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-current border-t-transparent text-blue-600"></div>
             </div>
           ) : dataStats && (
             <div className="bg-gray-50 p-4 rounded-lg mb-6">

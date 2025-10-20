@@ -47,10 +47,12 @@ export function CityManagerUnrecognizedPanel({
       <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
         Неопознанные города
       </span>
-      <SearchableSelect
+      <SearchableSelect<SelectOption>
         options={unrecognizedCityOptions}
         value={selectedUnrecognizedCityId}
         onChange={onSelectUnrecognizedCity}
+        getOptionValue={(o) => o.value}
+        getOptionLabel={(o) => o.label}
         placeholder={isLoadingUnrecognized ? 'Загружаем список…' : 'Выберите город из расходов'}
         className="w-full"
         disabled={isLoadingUnrecognized || isSubmitting || useUnrecognizedAlternate}
@@ -103,10 +105,12 @@ export function CityManagerUnrecognizedPanel({
                 Прикрепить как альтернативный вариант
               </p>
               <div className="flex flex-col items-stretch gap-2">
-                <SearchableSelect
+                <SearchableSelect<SelectOption>
                   options={citySelectionOptions}
                   value={selectedAttachCityId}
                   onChange={onSelectAttachCity}
+                  getOptionValue={(o) => o.value}
+                  getOptionLabel={(o) => o.label}
                   placeholder="Выберите основной город"
                   size="sm"
                   disabled={isAttachingUnrecognized}

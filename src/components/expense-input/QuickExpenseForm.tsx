@@ -408,24 +408,14 @@ export function QuickExpenseForm({
           </div>
         </div>
 
-        <div className="text-xs text-blue-600">
-          💡 Система определит категорию автоматически
-        </div>
-
-        {/* Кнопка добавления */}
         <Button
           onClick={handleQuickSubmit}
           disabled={isPending || !formData.amount || !formData.description.trim()}
           className="w-full"
           size="sm"
         >
-          {isPending ? 'Добавление...' : 'Добавить (Enter)'}
+          {isPending ? 'Добавление...' : 'Добавить'}
         </Button>
-
-        {/* Подсказка */}
-        <div className="text-xs text-gray-500 text-center">
-          Нажмите Enter в любом поле для быстрого добавления
-        </div>
       </div>
     </Card>
   )

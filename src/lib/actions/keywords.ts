@@ -911,3 +911,102 @@ export async function deleteUnrecognizedKeyword(id: string) {
     return { error: 'Произошла ошибка при удалении' }
   }
 }
+
+export async function saveBulkUnrecognizedKeywords(descriptions: string[]) {
+  const supabaseClient = await createServerClient()
+  const supabase = createSafeSupabaseClient(supabaseClient)
+
+  try {
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    if (descriptions.length === 0) {
+      return { success: true, message: 'Нет описаний для обработки' }
+    }
+
+    const allWords = descriptions.flatMap(extractKeywords)
+    if (allWords.length === 0) {
+      return { success: true, message: 'Нет ключевых слов для сохранения' }
+    }
+
+    const { data: existingKeywordsData } = await supabaseClient
+      .from('category_keywords')
+      .select(`
+        keyword,
+        keyword_synonyms (synonym)
+      `)
+      .eq('user_id', user.id)
+
+    const existingKeywordSet = new Set<string>()
+    existingKeywordsData?.forEach((k: ExistingKeyword) => {
+      if (k.keyword) existingKeywordSet.add(k.keyword.toLowerCase())
+      const synonyms = (k.keyword_synonyms || [])
+      synonyms.forEach(s => {
+        if (s.synonym) existingKeywordSet.add(s.synonym.toLowerCase())
+      })
+    })
+
+    const wordCounts = new Map<string, number>()
+    for (const word of allWords) {
+      if (!existingKeywordSet.has(word.toLowerCase())) {
+        wordCounts.set(word, (wordCounts.get(word) || 0) + 1)
+      }
+    }
+
+    if (wordCounts.size === 0) {
+      return { success: true, message: 'Все ключевые слова уже известны' }
+    }
+
+    const newWords = [...wordCounts.keys()]
+
+    const { data: existingUnrecognized } = await supabaseClient
+      .from('unrecognized_keywords')
+      .select('keyword, frequency')
+      .eq('user_id', user.id)
+      .in('keyword', newWords)
+
+    const existingMap = new Map<string, number>()
+    existingUnrecognized?.forEach((item: any) => {
+      existingMap.set(item.keyword, item.frequency)
+    })
+
+    const toUpdate: { keyword: string; frequency: number }[] = []
+    const toInsert: { user_id: string; keyword: string; frequency: number; first_seen: string; last_seen: string }[] = []
+    const now = new Date().toISOString()
+
+    for (const [word, count] of wordCounts.entries()) {
+      if (existingMap.has(word)) {
+        toUpdate.push({ keyword: word, frequency: (existingMap.get(word) || 0) + count })
+      } else {
+        toInsert.push({
+          user_id: user.id,
+          keyword: word,
+          frequency: count,
+          first_seen: now,
+          last_seen: now
+        })
+      }
+    }
+
+    if (toUpdate.length > 0) {
+      for (const item of toUpdate) {
+        await supabase
+          .from('unrecognized_keywords')
+          .update({ frequency: item.frequency, last_seen: now })
+          .eq('user_id', user.id)
+          .eq('keyword', item.keyword)
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await supabase.from('unrecognized_keywords').insert(toInsert)
+    }
+
+    return { success: true, data: { created: toInsert.length, updated: toUpdate.length } }
+  } catch (error) {
+    console.error('Ошибка массового сохранения неопознанных ключевых слов:', error)
+    return { error: 'Не удалось сохранить ключевые слова' }
+  }
+}

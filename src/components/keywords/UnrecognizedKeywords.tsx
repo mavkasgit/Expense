@@ -209,14 +209,13 @@ export function UnrecognizedKeywords({ categories, onKeywordAssigned }: Unrecogn
             <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
               Категория *
             </label>
-            <SearchableSelect
-              options={categories.map(category => ({
-                value: category.id,
-                label: category.name,
-                color: category.color || undefined
-              }))}
+            <SearchableSelect<Category>
+              options={categories}
               value={selectedCategoryId}
               onChange={(v) => setSelectedCategoryId(v || '')}
+              getOptionValue={(c) => c.id}
+              getOptionLabel={(c) => c.name}
+              getOptionColor={(c) => c.color}
               placeholder="Выберите категорию"
               required
             />

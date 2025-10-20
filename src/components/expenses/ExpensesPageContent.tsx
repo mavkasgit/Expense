@@ -1,20 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useInView } from 'react-intersection-observer'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { UnrecognizedKeywordsSection } from './UnrecognizedKeywordsSection'
 import { ExpenseEditModal } from './ExpenseEditModal'
+import { ExpenseFilters } from './ExpenseFilters'
 import { InlineNotesEditor } from './InlineNotesEditor'
 import { formatAmount } from '@/lib/utils/formatNumber'
+import { getExpenses, getExpensesDateRange } from '@/lib/actions/expenses';
 import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
 import { useToast } from '@/hooks/useToast'
-import type { Category, ExpenseWithCategory } from '@/types'
+import type { Category, ExpenseWithCategory, City } from '@/types'
 import Link from 'next/link'
 import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
 import { hasGeoPoint, normaliseMarkerPreset, parseCityCoordinates } from '@/lib/utils/cityCoordinates'
-import type { City } from '@/types'
+import { useCitySynonyms } from '@/hooks/useCitySynonyms'
+import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
 
 interface ExpensesPageContentProps {
   initialExpenses: ExpenseWithCategory[]
@@ -29,11 +33,110 @@ export function ExpensesPageContent({
   cities,
   error 
 }: ExpensesPageContentProps) {
-  const [showUnrecognizedKeywords, setShowUnrecognizedKeywords] = useState(true)
+  const [showUnrecognizedKeywords, setShowUnrecognizedKeywords] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    const saved = localStorage.getItem('unrecognizedKeywordsVisible');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('unrecognizedKeywordsVisible', JSON.stringify(showUnrecognizedKeywords));
+  }, [showUnrecognizedKeywords]);
+
   const [hideUncategorized, setHideUncategorized] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ExpenseWithCategory | null>(null)
   const [expenses, setExpenses] = useState(initialExpenses)
+  const [offset, setOffset] = useState(initialExpenses.length)
+  const [hasMore, setHasMore] = useState(initialExpenses.length >= 50)
+  const [isLoading, setIsLoading] = useState(false)
+  const [dateRangeBounds, setDateRangeBounds] = useState<{min: string, max: string} | null>(null)
+  const [isMounted, setIsMounted] = useState(false);
   const { showToast } = useToast()
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  const { synonyms: citySynonyms } = useCitySynonyms()
+
+  const { cityOptions: richCityOptions } = useMemo(
+    () => buildCityOptions(citySynonyms),
+    [citySynonyms]
+  )
+
+  useEffect(() => {
+    async function fetchDateRange() {
+      const result = await getExpensesDateRange()
+      if (result) {
+        if ('error' in result) {
+          showToast(result.error, 'error')
+        } else {
+          setDateRangeBounds(result)
+        }
+      }
+    }
+    fetchDateRange()
+  }, [showToast])
+
+  const initialFilters = {
+    search: '',
+    categoryId: '',
+    cityId: '',
+    dateFrom: '',
+    dateTo: '',
+    sortBy: 'date_desc',
+  }
+
+  const [filters, setFilters] = useState(initialFilters)
+
+  const { ref, inView } = useInView({
+    threshold: 0,
+    triggerOnce: false,
+  })
+
+  const fetchExpenses = useCallback(async (newFilters: any, isLoadMore = false) => {
+    setIsLoading(true)
+    const currentOffset = isLoadMore ? offset : 0
+    const result = await getExpenses({ 
+      limit: 50, 
+      offset: currentOffset, 
+      ...newFilters 
+    })
+
+    if (result.error) {
+      showToast(result.error, 'error')
+    } else if (result.data) {
+      if (isLoadMore) {
+        setExpenses(prev => [...prev, ...result.data])
+      } else {
+        setExpenses(result.data)
+      }
+      setOffset(currentOffset + result.data.length)
+      setHasMore(result.data.length >= 50)
+    }
+    setIsLoading(false)
+  }, [offset, showToast])
+
+
+  const handleFilterChange = (newFilterValues: any) => {
+    setFilters(prev => ({ ...prev, ...newFilterValues }))
+  }
+
+  const handleApplyFilters = () => {
+    fetchExpenses(filters, false)
+  }
+
+  const handleResetFilters = () => {
+    setFilters(initialFilters)
+    fetchExpenses(initialFilters, false)
+  }
+
+  useEffect(() => {
+    if (inView && hasMore && !isLoading) {
+      fetchExpenses(filters, true)
+    }
+  }, [inView, hasMore, isLoading, fetchExpenses, filters])
 
   if (error) {
     return (
@@ -97,44 +200,28 @@ export function ExpensesPageContent({
   return (
     <>
       {/* Секция неопознанных ключевых слов */}
-      <UnrecognizedKeywordsSection
-        categories={categories}
-        isVisible={showUnrecognizedKeywords}
-        onToggleVisibility={() => setShowUnrecognizedKeywords(!showUnrecognizedKeywords)}
-      />
+      {isMounted && (
+        <UnrecognizedKeywordsSection
+          categories={categories}
+          isVisible={showUnrecognizedKeywords}
+          onToggleVisibility={() => setShowUnrecognizedKeywords(!showUnrecognizedKeywords)}
+        />
+      )}
 
-      {/* Фильтры и действия */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Все расходы ({filteredExpenses.length})
-          </h2>
-          {uncategorizedCount > 0 && (
-            <div className="flex items-center space-x-2">
-              <label className="flex items-center space-x-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={hideUncategorized}
-                  onChange={(e) => setHideUncategorized(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-gray-700">
-                  Скрыть неопознанные ({uncategorizedCount})
-                </span>
-              </label>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex space-x-2">
-          <Link href="/dashboard">
-            <Button>Добавить расход</Button>
-          </Link>
-          <Link href="/bulk-import">
-            <Button variant="outline">Массовый ввод</Button>
-          </Link>
-        </div>
-      </div>
+      <ExpenseFilters 
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onApply={handleApplyFilters}
+        onReset={handleResetFilters}
+        categories={categories}
+        cities={richCityOptions}
+        expenseCount={filteredExpenses.length}
+        uncategorizedCount={uncategorizedCount}
+        hideUncategorized={hideUncategorized}
+        onHideUncategorizedChange={setHideUncategorized}
+        isLoading={isLoading}
+        dateRangeBounds={dateRangeBounds}
+      />
 
       {/* Список расходов */}
       <div className="space-y-2">
@@ -262,13 +349,14 @@ export function ExpensesPageContent({
           </Card>
         )}
         
-        {filteredExpenses.length >= 50 && (
-          <div className="text-center pt-4">
-            <Button variant="outline">
-              Загрузить еще
-            </Button>
-          </div>
-        )}
+        <div ref={ref} className="h-10 flex items-center justify-center">
+          {isLoading && (
+            <div className="text-sm text-gray-500">Загрузка...</div>
+          )}
+          {!isLoading && !hasMore && expenses.length > 0 && (
+            <div className="text-sm text-gray-500">Больше расходов нет</div>
+          )}
+        </div>
       </div>
 
       {/* Модал редактирования расхода */}
