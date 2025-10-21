@@ -233,7 +233,10 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       // Не очищаем pastedData, чтобы можно было быстро переоткрыть настройку
       // setPastedData([]);
       setHasHeaderRow(false);
-      showToast(`Добавлено ${importedExpenses.length} из ${stats.totalRows} записей`, 'success');
+      const message = stats.excludedRows > 0 
+        ? `Добавлено ${importedExpenses.length} из ${stats.totalRows} записей (${stats.excludedRows} исключено)`
+        : `Добавлено ${importedExpenses.length} из ${stats.totalRows} записей`;
+      showToast(message, 'success');
     },
     [setExpenses, setHasHeaderRow, showToast],
   );

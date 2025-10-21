@@ -42,7 +42,7 @@ export function createColumnMappingHandlers({
   persistColumnMapping,
   currentFormat,
 }: ColumnMappingWorkflowOptions) {
-  const applyMapping = async (mapping: ColumnMapping[], mode: 'append' | 'directSave') => {
+  const applyMapping = async (mapping: ColumnMapping[], mode: 'append' | 'directSave', exclusions?: string[]) => {
     const sanitized = sanitizeColumnMapping(mapping);
     persistColumnMapping(sanitized);
 
@@ -89,6 +89,7 @@ export function createColumnMappingHandlers({
       dataset: pastedData,
       hasHeaderRow,
       resolveCityByInput,
+      exclusions,
     });
 
     if (result.expenses.length === 0) {
@@ -107,12 +108,12 @@ export function createColumnMappingHandlers({
     }
   };
 
-  const handleColumnMappingApply = (mapping: ColumnMapping[]) => {
-    void applyMapping(mapping, 'append');
+  const handleColumnMappingApply = (mapping: ColumnMapping[], exclusions?: string[]) => {
+    void applyMapping(mapping, 'append', exclusions);
   };
 
-  const handleColumnMappingApplyAndSave = (mapping: ColumnMapping[]) => {
-    void applyMapping(mapping, 'directSave');
+  const handleColumnMappingApplyAndSave = (mapping: ColumnMapping[], exclusions?: string[]) => {
+    void applyMapping(mapping, 'directSave', exclusions);
   };
 
   const handleReviewCancel = () => {
@@ -168,6 +169,7 @@ interface BuildExpensesArgs {
   dataset: string[][];
   hasHeaderRow: boolean;
   resolveCityByInput: (value: string) => CityOption | null;
+  exclusions?: string[];
 }
 
 function buildExpensesFromMapping({
@@ -175,11 +177,13 @@ function buildExpensesFromMapping({
   dataset,
   hasHeaderRow,
   resolveCityByInput,
+  exclusions,
 }: BuildExpensesArgs) {
   return buildExpensesFromMappedData({
     mapping,
     dataset,
     hasHeaderRow,
     resolveCityByInput,
+    exclusions,
   });
 }

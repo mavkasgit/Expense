@@ -11,6 +11,7 @@ export interface BuildExpensesStats {
   totalRows: number;
   importedRows: number;
   skippedRows: number;
+  excludedRows: number;
   autoDetectedCities: number;
   manualCities: number;
   detectedTimes: number;

@@ -14,11 +14,22 @@ import type {
   BuildExpensesStats,
 } from '../types';
 
+// Проверка содержит ли строка исключающее слово
+function containsExclusion(rowData: string[], exclusions: string[]): boolean {
+  if (exclusions.length === 0) return false;
+  
+  const fullRowText = rowData.join(' ').toLowerCase();
+  return exclusions.some(exclusion => 
+    exclusion.trim() && fullRowText.includes(exclusion.toLowerCase())
+  );
+}
+
 interface BuildExpensesArgs {
   mapping: ColumnMapping[];
   dataset: string[][];
   hasHeaderRow: boolean;
   resolveCityByInput: (value: string) => CityOption | null;
+  exclusions?: string[];
 }
 
 export function buildExpensesFromMappedData({
@@ -26,11 +37,13 @@ export function buildExpensesFromMappedData({
   dataset,
   hasHeaderRow,
   resolveCityByInput,
+  exclusions = [],
 }: BuildExpensesArgs): BuildExpensesResult {
   const stats: BuildExpensesStats = {
     totalRows: 0,
     importedRows: 0,
     skippedRows: 0,
+    excludedRows: 0,
     autoDetectedCities: 0,
     manualCities: 0,
     detectedTimes: 0,
@@ -51,11 +64,15 @@ export function buildExpensesFromMappedData({
       : [],
   }));
 
-  const rowsToProcess = (hasHeaderRow ? dataset.slice(1) : dataset)
+  const allRows = (hasHeaderRow ? dataset.slice(1) : dataset)
     .map(normalizeRow)
     .filter(hasMeaningfulData);
 
-  stats.totalRows = rowsToProcess.length;
+  stats.totalRows = allRows.length;
+
+  // Фильтруем исключенные строки
+  const rowsToProcess = allRows.filter(row => !containsExclusion(row, exclusions));
+  stats.excludedRows = allRows.length - rowsToProcess.length;
 
   const newExpenses: BulkExpenseRowData[] = [];
 
