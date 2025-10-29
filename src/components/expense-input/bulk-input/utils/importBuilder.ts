@@ -12,6 +12,7 @@ import { getColumnLabel, hasMeaningfulData, normalizeRow } from './dataset';
 import type {
   BuildExpensesResult,
   BuildExpensesStats,
+  RowProcessingError,
 } from '../types';
 
 // Проверка содержит ли строка исключающее слово
@@ -30,6 +31,7 @@ interface BuildExpensesArgs {
   hasHeaderRow: boolean;
   resolveCityByInput: (value: string) => CityOption | null;
   exclusions?: string[];
+  duplicateIndices?: Set<number>;
 }
 
 export function buildExpensesFromMappedData({
@@ -38,20 +40,24 @@ export function buildExpensesFromMappedData({
   hasHeaderRow,
   resolveCityByInput,
   exclusions = [],
+  duplicateIndices = new Set(),
 }: BuildExpensesArgs): BuildExpensesResult {
   const stats: BuildExpensesStats = {
     totalRows: 0,
     importedRows: 0,
     skippedRows: 0,
     excludedRows: 0,
+    duplicateRows: 0,
     autoDetectedCities: 0,
     manualCities: 0,
     detectedTimes: 0,
     manualTimes: 0,
   };
 
+  const rowErrors: RowProcessingError[] = []; // Initialize errors array
+
   if (dataset.length === 0) {
-    return { expenses: [], stats, reviewItems: [] };
+    return { expenses: [], stats, reviewItems: [], errors: rowErrors }; // Return errors
   }
 
   const headerRow = hasHeaderRow ? dataset[0] : null;
@@ -70,9 +76,30 @@ export function buildExpensesFromMappedData({
 
   stats.totalRows = allRows.length;
 
-  // Фильтруем исключенные строки
-  const rowsToProcess = allRows.filter(row => !containsExclusion(row, exclusions));
-  stats.excludedRows = allRows.length - rowsToProcess.length;
+  // Фильтруем исключенные строки и дубликаты
+  const rowsToProcess: string[][] = [];
+  let excludedCount = 0;
+  let duplicateCount = 0;
+  
+  allRows.forEach((row, originalIndex) => {
+    // Сначала проверяем исключения
+    if (containsExclusion(row, exclusions)) {
+      excludedCount++;
+      return;
+    }
+    
+    // Затем проверяем дубликаты (по оригинальному индексу)
+    if (duplicateIndices.has(originalIndex)) {
+      duplicateCount++;
+      return;
+    }
+    
+    // Если прошли все фильтры - добавляем в обработку
+    rowsToProcess.push(row);
+  });
+  
+  stats.excludedRows = excludedCount;
+  stats.duplicateRows = duplicateCount;
 
   const newExpenses: BulkExpenseRowData[] = [];
 
@@ -81,15 +108,14 @@ export function buildExpensesFromMappedData({
       tempId: crypto.randomUUID(),
     };
 
+    const currentRowOriginalIndex = hasHeaderRow ? dataRowIndex + 1 : dataRowIndex; // Adjust for header row
+
     mappingWithMeta.forEach(column => {
       if (column.hidden || !column.enabled || column.targetFields.length === 0) {
         return;
       }
 
       const cellValue = row[column.columnIndex]?.trim() || '';
-      if (!cellValue) {
-        return;
-      }
 
       // Проверяем есть ли кастомное разделение для этого столбца
       const hasCustomSplit = column.customSplitSeparator && column.customSplitParts && Object.keys(column.customSplitParts).length > 0;
@@ -106,9 +132,8 @@ export function buildExpensesFromMappedData({
       }
 
       column.targetFields.forEach(targetField => {
-        // Если есть кастомное разделение, используем ТОЛЬКО значения из splitValues
-        // Если для поля нет значения в splitValues - значит разделение не дало результата для этого поля
         const fieldValue = hasCustomSplit ? (splitValues[targetField] || '') : cellValue;
+
         switch (targetField) {
           case 'amount': {
             try {
@@ -116,9 +141,23 @@ export function buildExpensesFromMappedData({
               const normalizedAmount = Math.abs(parsedAmount);
               if (normalizedAmount > 0) {
                 expenseData.amount = normalizedAmount;
+              } else {
+                if (fieldValue.trim() !== '') { 
+                    rowErrors.push({
+                        rowIndex: currentRowOriginalIndex,
+                        columnLabel: column.columnLabel,
+                        field: 'amount',
+                        message: `Не удалось распознать сумму из значения "${fieldValue}"`, 
+                    });
+                }
               }
             } catch (error) {
-              console.warn('Не удалось распарсить сумму из столбца', fieldValue, error);
+              rowErrors.push({
+                rowIndex: currentRowOriginalIndex,
+                columnLabel: column.columnLabel,
+                field: 'amount',
+                message: `Не удалось распарсить сумму из значения "${fieldValue}"`, 
+              });
             }
             break;
           }
@@ -130,7 +169,16 @@ export function buildExpensesFromMappedData({
             break;
           case 'expense_date': {
             const dateTimeResult = parseDateAndTime(fieldValue);
-            expenseData.expense_date = dateTimeResult.date;
+            if (dateTimeResult.date) {
+                expenseData.expense_date = dateTimeResult.date;
+            } else {
+                rowErrors.push({
+                    rowIndex: currentRowOriginalIndex,
+                    columnLabel: column.columnLabel,
+                    field: 'expense_date',
+                    message: `Не удалось распознать дату из значения "${fieldValue}"`, 
+                });
+            }
             if (dateTimeResult.time && !expenseData.expense_time) {
               expenseData.expense_time = dateTimeResult.time;
               stats.detectedTimes += 1;
@@ -145,6 +193,13 @@ export function buildExpensesFromMappedData({
             if (parsedTime) {
               expenseData.expense_time = parsedTime;
               stats.manualTimes += 1;
+            } else if (fieldValue.trim() !== '') { 
+                rowErrors.push({
+                    rowIndex: currentRowOriginalIndex,
+                    columnLabel: column.columnLabel,
+                    field: 'expense_time',
+                    message: `Не удалось распознать время из значения "${fieldValue}"`, 
+                });
             }
             break;
           }
@@ -155,10 +210,33 @@ export function buildExpensesFromMappedData({
       });
     });
 
-    // Убрали раннюю валидацию - теперь импортируем все строки, даже с ошибками
-    // Валидация будет происходить только перед сохранением
+    // Post-processing and validation for required fields
     const description = expenseData.description?.trim() || '';
     const notes = expenseData.notes?.trim() || '';
+
+    // Check for required fields (amount and description are typically required)
+    if (!expenseData.amount || expenseData.amount <= 0) {
+        rowErrors.push({
+            rowIndex: currentRowOriginalIndex,
+            field: 'amount',
+            message: 'Сумма является обязательным полем и должна быть больше нуля.',
+        });
+    }
+    if (!description) {
+        rowErrors.push({
+            rowIndex: currentRowOriginalIndex,
+            field: 'description',
+            message: 'Описание является обязательным полем.',
+        });
+    }
+    if (!expenseData.expense_date) {
+        rowErrors.push({
+            rowIndex: currentRowOriginalIndex,
+            field: 'expense_date',
+            message: 'Дата является обязательным полем.',
+        });
+    }
+
 
     const providedCity = expenseData.city?.trim() || '';
     let finalCity = providedCity;
@@ -174,7 +252,7 @@ export function buildExpensesFromMappedData({
     }
 
     newExpenses.push({
-      amount: expenseData.amount || 0, // Если нет суммы, ставим 0 чтобы показать ошибку в UI
+      amount: expenseData.amount || 0,
       description,
       notes,
       category_id: '',
@@ -189,7 +267,7 @@ export function buildExpensesFromMappedData({
   stats.importedRows = newExpenses.length;
   stats.skippedRows = Math.max(stats.totalRows - stats.importedRows, 0);
 
-  return { expenses: newExpenses, stats, reviewItems: [] };
+  return { expenses: newExpenses, stats, reviewItems: [], errors: rowErrors };
 }
 
 export function buildSingleColumnExpenses(rows: string[][], hasHeaderRow: boolean): BulkExpenseRowData[] {

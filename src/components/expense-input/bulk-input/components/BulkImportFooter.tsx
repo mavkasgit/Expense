@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 
 interface BulkImportFooterProps {
@@ -33,6 +34,23 @@ export function BulkImportFooter({
   newCitiesCount,
   newDescriptionsCount,
 }: BulkImportFooterProps) {
+  const [scrollDirection, setScrollDirection] = useState<'down' | 'up'>('down');
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 10) { // -10 for a small buffer
+        setScrollDirection('up');
+      } else {
+        setScrollDirection('down');
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   return (
     <div className="sticky bottom-0 bg-white p-4 border-t border-gray-200 dark:border-gray-700 shadow-lg z-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -67,13 +85,17 @@ export function BulkImportFooter({
           <Button 
             variant="outline" 
             onClick={() => {
-              window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+              if (scrollDirection === 'down') {
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+              } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
             }} 
             disabled={!hasExpenses}
             size="sm"
-            title="Прокрутить вниз"
+            title={scrollDirection === 'down' ? "Прокрутить вниз" : "Прокрутить вверх"}
           >
-            ⬇️ Вниз
+            {scrollDirection === 'down' ? '⬇️ Вниз' : '⬆️ Вверх'}
           </Button>
           <Button variant="outline" onClick={onClear} disabled={!hasExpenses || isSubmitting}>
             🗑️ Очистить

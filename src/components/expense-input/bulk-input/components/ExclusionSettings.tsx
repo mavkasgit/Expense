@@ -25,6 +25,8 @@ interface ExclusionSettingsProps {
   onExclusionsChange: (exclusions: string[]) => void;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  skipFirstRow: boolean;
+  onSkipFirstRowChange: (value: boolean) => void;
 }
 
 // Ключ для localStorage
@@ -67,11 +69,13 @@ function containsSpecificExclusion(rowData: string[], exclusion: string): boolea
   return fullRowText.includes(exclusion.toLowerCase());
 }
 
-export function ExclusionSettings({ 
-  sampleData, 
-  onExclusionsChange, 
-  isCollapsed, 
-  onToggleCollapsed 
+export function ExclusionSettings({
+  sampleData,
+  onExclusionsChange,
+  isCollapsed,
+  onToggleCollapsed,
+  skipFirstRow,
+  onSkipFirstRowChange,
 }: ExclusionSettingsProps) {
   const [exclusions, setExclusions] = useState<string[]>([]);
   const [newExclusion, setNewExclusion] = useState('');
@@ -113,15 +117,19 @@ export function ExclusionSettings({
   }, []);
 
   // Подсчет исключенных строк
-  const excludedCount = sampleData.filter(row => 
-    containsExclusion(row, exclusions)
+  const excludedByWordsCount = sampleData.filter((row, index) => 
+    (index === 0 && skipFirstRow) ? false : containsExclusion(row, exclusions)
   ).length;
 
+  const excludedCount = excludedByWordsCount + (skipFirstRow ? 1 : 0);
   const includedCount = sampleData.length - excludedCount;
 
   // Фильтрация данных для предпросмотра
-  const filteredData = sampleData.filter(row => {
-    const isExcluded = containsExclusion(row, exclusions);
+  const filteredData = sampleData.filter((row, index) => {
+    const isExcludedByWord = containsExclusion(row, exclusions);
+    const isFirstRow = index === 0 && skipFirstRow;
+    const isExcluded = isExcludedByWord || isFirstRow;
+
     if (previewMode === 'excluded') return isExcluded;
     if (previewMode === 'included') return !isExcluded;
     return true;
@@ -146,97 +154,113 @@ export function ExclusionSettings({
             ▼
           </span>
           <span className="text-lg" aria-hidden>🚫</span>
-          <h3 className="font-medium text-red-900">Исключающие слова</h3>
+          <h3 className="font-medium text-red-900">Исключения</h3>
           <Tooltip content="Добавьте слова или фразы, которые будут исключать строки из импорта.">
             <div className="w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs cursor-help">
               ?
             </div>
           </Tooltip>
-          {exclusions.length > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-              {exclusions.length} слов
+          {excludedCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 whitespace-nowrap">
+              {excludedCount} строк
             </span>
           )}
-          {excludedCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-              {excludedCount} исключено
+          {exclusions.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 whitespace-nowrap">
+              {exclusions.length} слов
             </span>
           )}
         </div>
         <p className="text-xs text-red-600 hidden sm:block">
-          Строки содержащие эти слова будут исключены из импорта
+          Строки содержащие эти слова или первая строка будут исключены
         </p>
       </div>
 
       {!isCollapsed && (
         <div className="space-y-4 p-4 border-t border-red-200">
-          {/* Добавление нового исключения */}
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              placeholder="Введите слово или фразу для исключения..."
-              value={newExclusion}
-              onChange={(e) => setNewExclusion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddExclusion();
-                }
-              }}
-              className="flex-1"
-            />
-            <Button
-              onClick={handleAddExclusion}
-              disabled={!newExclusion.trim() || exclusions.includes(newExclusion.trim())}
-              size="sm"
-            >
-              Добавить
-            </Button>
-          </div>
-
-          {/* Список исключений */}
-          {exclusions.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-gray-700">
-                Активные исключения:
+          <div className="flex flex-col md:flex-row items-start justify-between gap-4">
+            {/* Левая колонка для слов */}
+            <div className="flex-1 w-full space-y-3">
+              <div className="text-sm font-medium text-gray-700">Исключающие слова:</div>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Введите слово или фразу..."
+                  value={newExclusion}
+                  onChange={(e) => setNewExclusion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddExclusion();
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAddExclusion}
+                  disabled={!newExclusion.trim() || exclusions.includes(newExclusion.trim())}
+                  size="sm"
+                >
+                  Добавить
+                </Button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {exclusions.map((exclusion, index) => {
-                  const exclusionCount = sampleData.filter(row => 
-                    containsSpecificExclusion(row, exclusion)
-                  ).length;
-                  
-                  return (
-                    <span
-                      key={index}
-                      className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-300 px-3 py-1 text-sm text-red-800 group"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleShowExclusionPreview(exclusion)}
-                        className="hover:underline cursor-pointer"
-                        title={`Показать ${exclusionCount} исключенных строк`}
+              {exclusions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {exclusions.map((exclusion, index) => {
+                    const exclusionCount = sampleData.filter(row => 
+                      containsSpecificExclusion(row, exclusion)
+                    ).length;
+                    
+                    return (
+                      <span
+                        key={index}
+                        className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-300 px-3 py-1 text-sm text-red-800 group"
                       >
-                        "{exclusion}" ({exclusionCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveExclusion(exclusion)}
-                        className="ml-1 flex items-center justify-center h-4 w-4 rounded-full hover:bg-red-200 transition-colors"
-                        title="Удалить"
-                      >
-                        <span className="text-xs leading-none">✕</span>
-                      </button>
-                    </span>
-                  );
-                })}
+                        <button
+                          type="button"
+                          onClick={() => handleShowExclusionPreview(exclusion)}
+                          className="hover:underline cursor-pointer"
+                          title={`Показать ${exclusionCount} исключенных строк`}
+                        >
+                          &quot;{exclusion}&quot; ({exclusionCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExclusion(exclusion)}
+                          className="ml-1 flex items-center justify-center h-4 w-4 rounded-full hover:bg-red-200 transition-colors"
+                          title="Удалить"
+                        >
+                          <span className="text-xs leading-none">✕</span>
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Правая колонка для других исключений */}
+            <div className="w-full md:w-1/3 space-y-3">
+              <div className="text-sm font-medium text-gray-700">Другие исключения:</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="skip-first-row"
+                  checked={skipFirstRow}
+                  onChange={(e) => onSkipFirstRowChange(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
+                />
+                <label htmlFor="skip-first-row" className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer whitespace-nowrap">
+                  <span>📋</span>
+                  <span>Исключить первую строку</span>
+                </label>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Статистика и предпросмотр */}
           {sampleData.length > 0 && (
-            <div className="space-y-3">
+            <div className="space-y-3 pt-4 border-t border-red-100">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 text-sm">
                   <span className="text-green-700">
@@ -297,10 +321,13 @@ export function ExclusionSettings({
                     <table className="w-full text-xs">
                       <tbody>
                         {filteredData.slice(0, 10).map((row, index) => {
-                          const isExcluded = containsExclusion(row, exclusions);
+                          const originalIndex = sampleData.indexOf(row);
+                          const isExcludedByWord = containsExclusion(row, exclusions);
+                          const isFirstRow = originalIndex === 0 && skipFirstRow;
+                          const isExcluded = isExcludedByWord || isFirstRow;
                           return (
                             <tr 
-                              key={index} 
+                              key={originalIndex} 
                               className={`border-b hover:bg-gray-50 ${
                                 isExcluded ? 'bg-red-50 text-red-800' : ''
                               }`}
@@ -358,7 +385,7 @@ export function ExclusionSettings({
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-red-600">🚫</span>
                 <span className="font-medium text-red-800">
-                  Исключающее слово: "{selectedExclusionForPreview}"
+                  Исключающее слово: &quot;{selectedExclusionForPreview}&quot;
                 </span>
                 <span className="text-red-600">
                   ({modalData.length} из {sampleData.length} строк)
@@ -378,9 +405,10 @@ export function ExclusionSettings({
                 </thead>
                 <tbody>
                   {modalData.map((row, index) => {
-                    const isExcluded = selectedExclusionForPreview
-                      ? containsSpecificExclusion(row, selectedExclusionForPreview)
-                      : containsExclusion(row, exclusions);
+                    const originalIndex = sampleData.indexOf(row);
+                    const isExcludedByWord = containsExclusion(row, exclusions);
+                    const isFirstRow = originalIndex === 0 && skipFirstRow;
+                    const isExcluded = isExcludedByWord || isFirstRow;
                     
                     return (
                       <tr 

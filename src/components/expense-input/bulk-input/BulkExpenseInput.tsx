@@ -225,7 +225,12 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     (result: BuildExpensesResult) => {
       const { expenses: importedExpenses, stats } = result;
       if (importedExpenses.length === 0) {
-        showToast('Не удалось обработать данные с текущими настройками столбцов', 'error');
+        // Более информативное сообщение об ошибке
+        if (stats.excludedRows === stats.totalRows) {
+          showToast(`Все ${stats.totalRows} записей были исключены фильтрами (исключения или дубликаты)`, 'warning');
+        } else {
+          showToast('Не удалось обработать данные с текущими настройками столбцов', 'error');
+        }
         return;
       }
 

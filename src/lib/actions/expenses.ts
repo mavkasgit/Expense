@@ -16,7 +16,7 @@ export async function createExpense(data: CreateExpenseData): Promise<{ success:
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -185,7 +185,7 @@ export async function updateExpense(id: string, data: UpdateExpenseData): Promis
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -247,38 +247,38 @@ export async function updateExpense(id: string, data: UpdateExpenseData): Promis
         if (!normalized) {
           return null
         }
-  
+
         const { data: directCity } = await supabaseClient
           .from('cities')
           .select('id, name')
           .eq('user_id', user.id)
           .ilike('name', normalized)
           .maybeSingle()
-  
+
         if ((directCity as any)?.id) {
           return directCity
         }
-  
+
         const { data: synonymMatch } = await supabaseClient
           .from('city_synonyms')
           .select('city_id, city:cities(id, name)')
           .eq('user_id', user.id)
           .ilike('synonym', normalized)
           .maybeSingle()
-  
+
         if ((synonymMatch as any)?.city) {
           return (synonymMatch as any).city as { id: string; name: string }
         }
-  
+
         return null
       }
-  
+
       const rememberUnrecognizedCity = async (value: string) => {
         const normalized = value.trim()
         if (!normalized) {
           return
         }
-  
+
         try {
           const { data: existing } = await supabaseClient
             .from('unrecognized_cities')
@@ -286,9 +286,9 @@ export async function updateExpense(id: string, data: UpdateExpenseData): Promis
             .eq('user_id', user.id)
             .ilike('name', normalized)
             .maybeSingle()
-  
+
           const now = new Date().toISOString()
-  
+
           if ((existing as any)?.id) {
             await supabase
               .from('unrecognized_cities')
@@ -376,7 +376,7 @@ export async function deleteExpense(id: string) {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -418,7 +418,7 @@ export async function getExpenses(filters?: {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -461,7 +461,7 @@ export async function getExpenses(filters?: {
 
     // Сортировка
     const sortBy = filters?.sortBy || 'date_desc';
-    
+
     if (sortBy === 'date_asc') {
       query = query.order('expense_date', { ascending: true });
     } else if (sortBy === 'amount_asc') {
@@ -502,7 +502,7 @@ export async function getExpenseById(id: string) {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -537,7 +537,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -682,11 +682,11 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
 
       return { category_id: null, matched_keywords: [], auto_categorized: false }
     }
-    
+
     // Обрабатываем все расходы в памяти (без await в цикле)
     const processedExpenses = []
     const errors: Array<{ row: number; message: string }> = []
-    
+
     const unrecognizedCounters = new Map<string, { name: string; count: number }>()
     const uncategorizedDescriptions: string[] = []
 
@@ -774,9 +774,9 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     }
 
     if (processedExpenses.length === 0) {
-      return { 
+      return {
         error: 'Нет валидных данных для создания',
-        errors 
+        errors
       }
     }
 
@@ -812,9 +812,9 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
 
     revalidatePath('/expenses')
     revalidatePath('/dashboard')
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       data: createdExpenses,
       stats: {
         success: successCount,
@@ -839,7 +839,7 @@ export async function getExpenseStats(filters?: {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -918,7 +918,7 @@ export async function deleteAllExpenses() {
   try {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -953,7 +953,7 @@ export async function getExistingCitiesAndDescriptions(): Promise<{
 
   try {
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
@@ -1049,5 +1049,215 @@ export async function getExpensesDateRange(): Promise<{ min: string; max: string
   } catch (err) {
     console.error('Ошибка получения диапазона дат:', err)
     return { error: 'Произошла ошибка' }
+  }
+}
+// Типы для поиска дубликатов
+export interface DuplicateMatch {
+  existingExpense: ExpenseWithCategory;
+  similarity: number;
+  matchedFields: string[];
+}
+
+export interface DuplicateCheckResult {
+  hasDuplicates: boolean;
+  matches: DuplicateMatch[];
+}
+
+export async function checkForDuplicates(
+  newExpenses: CreateExpenseData[],
+  compareFields: {
+    amount: boolean;
+    date: boolean;
+    description: boolean;
+    time: boolean;
+  } = { amount: false, date: true, description: false, time: false }
+): Promise<{ success: true; results: Record<number, DuplicateCheckResult> } | { error: string }> {
+  const supabaseClient = await createServerClient()
+
+  try {
+    // Получаем текущего пользователя
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' }
+    }
+
+    // Determine date range from new expenses
+    let minDate: string | undefined;
+    let maxDate: string | undefined;
+    if (newExpenses.length > 0) {
+        const dates = newExpenses.map(e => e.expense_date).filter(d => d) as string[];
+        if (dates.length > 0) {
+            minDate = dates.reduce((min, current) => (current < min ? current : min), dates[0]);
+            maxDate = dates.reduce((max, current) => (current > max ? current : max), dates[0]);
+        }
+    }
+
+    // Получаем ВСЕ существующие расходы пользователя
+    let query = supabaseClient
+      .from('expenses')
+      .select(`
+        *,
+        category:categories(id, name, color, icon),
+        city:cities(id, name)
+      `)
+      .eq('user_id', user.id)
+
+    if (minDate && maxDate) {
+        query = query.gte('expense_date', minDate).lte('expense_date', maxDate);
+    }
+
+    const { data: existingExpenses, error: fetchError } = await query.order('expense_date', { ascending: false });
+
+    if (fetchError) {
+      console.error('Ошибка получения существующих расходов:', fetchError)
+      return { error: 'Не удалось получить существующие расходы' }
+    }
+
+    console.log('🔍 Начинаем поиск дубликатов:', {
+      newExpensesCount: newExpenses.length,
+      existingExpensesCount: existingExpenses?.length || 0,
+      compareFields,
+      dateRange: minDate && maxDate ? {from: minDate, to: maxDate} : "N/A"
+    });
+
+    const results: Record<number, DuplicateCheckResult> = {}
+
+    // Проверяем каждый новый расход
+    for (let i = 0; i < newExpenses.length; i++) {
+      const newExpense = newExpenses[i]
+      const matches: DuplicateMatch[] = []
+
+      console.log(`🔍 Проверяем расход ${i + 1}:`, {
+        amount: newExpense.amount,
+        date: newExpense.expense_date,
+        description: newExpense.description
+      });
+
+      // Сравниваем с каждым существующим расходом
+      for (const existing of existingExpenses || []) {
+        let isMatch = true
+        const matchedFields: string[] = []
+
+        // Проверяем сумму (с точностью до копеек)
+        if (compareFields.amount) {
+          const newAmount = Math.round(newExpense.amount * 100) / 100
+          const existingAmount = Math.round((existing as any).amount * 100) / 100
+          if (newAmount === existingAmount) {
+            matchedFields.push('amount')
+          } else {
+            isMatch = false
+          }
+        }
+
+        // Проверяем дату
+        if (compareFields.date && isMatch) {
+          if (newExpense.expense_date === (existing as any).expense_date) {
+            matchedFields.push('date')
+          } else {
+            isMatch = false
+          }
+        }
+
+        // Проверяем описание (частичное совпадение)
+        if (compareFields.description && isMatch) {
+          const newDesc = (newExpense.description || '').toLowerCase().trim()
+          const existingDesc = ((existing as any).description || '').toLowerCase().trim()
+          
+          // Проверяем частичное совпадение: одно описание содержится в другом
+          const hasPartialMatch = newDesc.includes(existingDesc) || existingDesc.includes(newDesc)
+          
+          if (hasPartialMatch && newDesc && existingDesc) {
+            matchedFields.push('description')
+            console.log('✅ Описание частично совпадает:', {
+              new: newDesc,
+              existing: existingDesc
+            });
+          } else {
+            isMatch = false
+          }
+        }
+
+        // Проверяем время (только если указано у обоих)
+        if (compareFields.time && isMatch) {
+          const newTimeRaw = (newExpense.expense_time || '').trim()
+          const existingTimeRaw = ((existing as any).expense_time || '').trim()
+          
+          // Извлекаем только время из строки (убираем дату если есть) и нормализуем формат
+          const extractTime = (timeStr: string): string => {
+            if (!timeStr) return '';
+            
+            let time = timeStr;
+            // Если есть пробел, берем часть после пробела (время)
+            if (timeStr.includes(' ')) {
+              time = timeStr.split(' ').pop() || '';
+            }
+            
+            // Нормализуем формат времени до ЧЧ:ММ (убираем секунды если есть)
+            const timeParts = time.split(':');
+            if (timeParts.length >= 2) {
+              return `${timeParts[0]}:${timeParts[1]}`;
+            }
+            
+            return time;
+          };
+          
+          const newTime = extractTime(newTimeRaw);
+          const existingTime = extractTime(existingTimeRaw);
+          
+          console.log('🕐 Сравнение времени:', {
+            newTimeRaw: `"${newTimeRaw}"`,
+            existingTimeRaw: `"${existingTimeRaw}"`,
+            newTime: `"${newTime}"`,
+            existingTime: `"${existingTime}"`,
+            bothHaveTime: !!(newTime && existingTime)
+          });
+          
+          // Если время указано у обоих - сравниваем
+          if (newTime && existingTime) {
+            if (newTime === existingTime) {
+              matchedFields.push('time')
+              console.log('✅ Время совпадает');
+            } else {
+              isMatch = false
+              console.log('❌ Время не совпадает');
+            }
+          } else {
+            console.log('⏭️ Время игнорируется (не указано у одного или обоих)');
+          }
+          // Если время не указано у одного или обоих - игнорируем это поле
+          // (не добавляем в matchedFields, но и не отклоняем дубликат)
+        }
+
+        // Если все выбранные поля совпадают - это дубликат
+        if (isMatch && matchedFields.length > 0) {
+          console.log('✅ Найден дубликат:', {
+            new: { amount: newExpense.amount, date: newExpense.expense_date, description: newExpense.description },
+            existing: { amount: (existing as any).amount, date: (existing as any).expense_date, description: (existing as any).description },
+            matchedFields
+          });
+
+          matches.push({
+            existingExpense: existing as ExpenseWithCategory,
+            similarity: 1.0,
+            matchedFields
+          })
+        }
+      }
+
+      results[i] = {
+        hasDuplicates: matches.length > 0,
+        matches
+      }
+    }
+
+    const duplicatesCount = Object.values(results).filter(r => r.hasDuplicates).length
+    console.log('🔍 Итого найдено дубликатов:', duplicatesCount);
+
+    return { success: true, results }
+
+  } catch (err) {
+    console.error('Ошибка проверки дубликатов:', err)
+    return { error: 'Произошла ошибка при проверке дубликатов' }
   }
 }

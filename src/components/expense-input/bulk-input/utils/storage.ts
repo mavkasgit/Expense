@@ -3,11 +3,16 @@ import { sanitizeColumnMapping } from './columnMapping';
 import type { ColumnMapping } from '@/types';
 
 const MAPPINGS_BY_FORMAT_KEY = 'expense-bulk-column-mappings-by-format';
+const SKIP_FIRST_ROW_KEY = 'expense-bulk-skip-first-row-by-format';
 
 export type DataSourceFormat = 'csv' | 'xlsx' | 'xls' | 'html' | 'clipboard' | 'unknown';
 
 interface FormatMappingStorage {
   [format: string]: ColumnMapping[];
+}
+
+interface SkipFirstRowStorage {
+  [format: string]: boolean;
 }
 
 // Определение формата из имени файла или источника
@@ -154,7 +159,68 @@ export function deleteColumnMapping(format: DataSourceFormat): void {
     const allMappings = loadAllFormatMappings();
     delete allMappings[format];
     saveAllFormatMappings(allMappings);
+    
+    // Также удаляем настройку skipFirstRow для этого формата
+    const skipFirstRowSettings = loadAllSkipFirstRowSettings();
+    delete skipFirstRowSettings[format];
+    saveAllSkipFirstRowSettings(skipFirstRowSettings);
   } catch (error) {
     console.warn('Ошибка удаления настроек формата:', error);
+  }
+}
+
+// Загрузка всех настроек skipFirstRow для всех форматов
+function loadAllSkipFirstRowSettings(): SkipFirstRowStorage {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = localStorage.getItem(SKIP_FIRST_ROW_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn('Ошибка загрузки настроек skipFirstRow:', error);
+    return {};
+  }
+}
+
+// Сохранение всех настроек skipFirstRow
+function saveAllSkipFirstRowSettings(storage: SkipFirstRowStorage): void {
+  try {
+    localStorage.setItem(SKIP_FIRST_ROW_KEY, JSON.stringify(storage));
+  } catch (error) {
+    console.warn('Ошибка сохранения настроек skipFirstRow:', error);
+  }
+}
+
+// Загрузка настройки skipFirstRow для конкретного формата
+export function loadSkipFirstRow(format?: DataSourceFormat): boolean {
+  if (!format) {
+    return false;
+  }
+  
+  try {
+    const allSettings = loadAllSkipFirstRowSettings();
+    return allSettings[format] ?? false;
+  } catch (error) {
+    console.warn('Ошибка загрузки настройки skipFirstRow:', error);
+    return false;
+  }
+}
+
+// Сохранение настройки skipFirstRow для конкретного формата
+export function saveSkipFirstRow(skipFirstRow: boolean, format?: DataSourceFormat): void {
+  if (!format) {
+    return;
+  }
+  
+  try {
+    const allSettings = loadAllSkipFirstRowSettings();
+    allSettings[format] = skipFirstRow;
+    saveAllSkipFirstRowSettings(allSettings);
+  } catch (error) {
+    console.warn('Ошибка сохранения настройки skipFirstRow:', error);
   }
 }

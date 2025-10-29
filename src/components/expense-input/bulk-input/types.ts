@@ -1,4 +1,4 @@
-import type { ColumnMapping } from '@/types';
+import type { ColumnMapping, ColumnMappingField } from '@/types';
 import type { TableInfo } from '@/lib/utils/bankStatementParsers';
 import type { BulkExpenseRowData } from '@/lib/validations/expenses';
 
@@ -12,6 +12,7 @@ export interface BuildExpensesStats {
   importedRows: number;
   skippedRows: number;
   excludedRows: number;
+  duplicateRows: number;
   autoDetectedCities: number;
   manualCities: number;
   detectedTimes: number;
@@ -27,10 +28,18 @@ export type AutoExtractionReviewItem = {
   cleanedDescription: string;
 };
 
+export interface RowProcessingError {
+  rowIndex: number; // Original index in the dataset
+  columnLabel?: string; // Label of the column where error occurred
+  field?: ColumnMappingField; // Field that failed to parse/validate
+  message: string; // Detailed error message
+}
+
 export type BuildExpensesResult = {
   expenses: BulkExpenseRowData[];
   stats: BuildExpensesStats;
   reviewItems: AutoExtractionReviewItem[];
+  errors: RowProcessingError[]; // New: list of errors per row/field
 };
 
 export type ReviewModalState = {
