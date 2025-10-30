@@ -72,6 +72,22 @@ expense-tracker/
 
 This project follows a spec-driven development approach. See the `.kiro/specs/expense-tracker/` directory for detailed requirements, design, and implementation tasks.
 
+## Building
+
+### Offline syntax check (default in constrained environments)
+- Run `npm run build`.
+- If `node_modules/.bin/next` is not available, the script executes `scripts/build.mjs`.
+- The fallback loads the globally available TypeScript compiler and transpiles every `.ts`/`.tsx` file to make sure there are no syntax errors.
+- This path does **not** perform a full Next.js build, but it guarantees that the source compiles at least at the syntax level when dependencies cannot be installed (e.g. due to restricted registries).
+
+### Full Next.js production build
+1. Ensure npm can reach the package registry (configure the corporate proxy if needed).
+2. Install dependencies with `npm install` (or `pnpm install`/`yarn install`).
+3. Run `npm run build` again. When `node_modules/.bin/next` is present the script automatically delegates to `next build`, giving you the real production output.
+4. Optionally run `npm run start` to serve the production bundle locally.
+
+The custom build script lives in `scripts/build.mjs` and can be extended with additional checks if required.
+
 ## License
 
 This project is private and not licensed for public use.
