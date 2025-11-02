@@ -4,11 +4,20 @@ A modern web application for tracking personal expenses built with Next.js 15, T
 
 ## Features
 
-- User authentication and authorization
-- Multiple expense input methods (single entry, bulk table import)
-- Automatic expense categorization with keyword matching
-- Analytics and expense visualization
-- Responsive design for all devices
+- 🔐 User authentication and authorization
+- 💰 Multiple expense input methods (quick entry, full form, bulk table import)
+- 🤖 Automatic expense categorization with keyword matching and synonyms
+- 📊 **Advanced Analytics Dashboard** (NEW!)
+  - Interactive charts (line, bar, pie)
+  - Period comparison and trends
+  - Category and city analytics
+  - Calendar heatmap visualization
+  - Multiple time filters (week, month, quarter, year)
+- 🏙️ City management with synonyms and geolocation
+- 🏷️ Category groups with drag-and-drop sorting
+- 📂 Bulk import from CSV and bank statements
+- 💾 Backup and restore functionality
+- 📱 Responsive design for all devices
 
 ## Tech Stack
 
@@ -17,7 +26,9 @@ A modern web application for tracking personal expenses built with Next.js 15, T
 - **Deployment**: Vercel
 - **Integration**: MCP Supabase Server
 - **Styling**: Tailwind CSS
-- **Type Safety**: TypeScript
+- **Charts**: Recharts
+- **Type Safety**: TypeScript + Zod
+- **UI**: Custom components + Radix UI primitives
 
 ## Getting Started
 
@@ -56,8 +67,10 @@ expense-tracker/
 │   │   ├── ui/                  # Base UI components
 │   │   ├── forms/               # Form components
 │   │   ├── expense-input/       # Expense input methods
-│   │   ├── categorization/      # Auto-categorization components
-│   │   ├── charts/              # Analytics components
+│   │   ├── analytics/           # Analytics charts and visualizations
+│   │   ├── categories/          # Category management
+│   │   ├── cities/              # City management
+│   │   ├── keywords/            # Keyword management
 │   │   └── layout/              # Layout components
 │   ├── lib/                     # Utilities and configurations
 │   │   ├── supabase/            # Supabase clients
